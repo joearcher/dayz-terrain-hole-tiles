@@ -647,7 +647,17 @@ function renderQuick(res) {
   });
   $("#qTile").textContent = "{ " + q.tx + ", " + q.tz + " }";
   $("#qInfo").textContent = notes.join(" · ");
-  $("#qAdd").textContent = res.finalKeys.has(k) ? "Add to list again" : "Add to list";
+  // A tile can only be a hole once, so there's nothing to add if it's listed or off the map.
+  const outside = q.tx < 0 || q.tz < 0 || q.tx >= res.max || q.tz >= res.max;
+  $("#qAdd").disabled = outside || res.finalKeys.has(k);
+  $("#qAdd").textContent = res.finalKeys.has(k) ? "Already in your list" : "Add to list";
+}
+// Centre the grid on a tile and put the cursor on it.
+function showTile(q, scroll) {
+  view = { cx: q.tx + 0.5, cz: q.tz + 0.5, span: Math.min(view.span, 24) }; clampView();
+  hover = { tx: q.tx, tz: q.tz };
+  draw(); readout();
+  if (scroll) $("#gridwrap").scrollIntoView({ behavior: "smooth", block: "center" });
 }
 function flash(id, msg) { const el = $(id); el.textContent = msg; clearTimeout(el._t); el._t = setTimeout(() => { el.textContent = ""; }, 4000); }
 
@@ -721,18 +731,18 @@ $("#qCopy").addEventListener("click", () => {
 });
 $("#qAdd").addEventListener("click", () => {
   const q = quickTile(); if (!q) return;
+  const k = key(q.tx, q.tz);
+  if (last.finalKeys.has(k)) return;
   const ms = cur(), line = fm(q.x) + ", " + fm(q.z) + "  # converted";
   ms.text = ms.text.replace(/\s*$/, "") + (ms.text.trim() ? "\n" : "") + line;
+  // If the tile was erased on the grid earlier, adding it again un-erases it.
+  ms.removed = ms.removed.filter(r => r !== k);
   $("#pos").value = ms.text; save(); render();
-  flash("#qStatus", "Added to Positions as tile { " + q.tx + ", " + q.tz + " }.");
+  // render() refits to every position; show the tile that was just added instead.
+  showTile(q, false);
+  flash("#qStatus", "Added tile { " + q.tx + ", " + q.tz + " } to your list.");
 });
-$("#qShow").addEventListener("click", () => {
-  const q = quickTile(); if (!q) return;
-  view = { cx: q.tx + 0.5, cz: q.tz + 0.5, span: Math.min(view.span, 24) }; clampView();
-  hover = { tx: q.tx, tz: q.tz };
-  draw(); readout();
-  $("#gridwrap").scrollIntoView({ behavior: "smooth", block: "center" });
-});
+$("#qShow").addEventListener("click", () => { const q = quickTile(); if (q) showTile(q, true); });
 document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", () => { state.mode = r.value; save(); render(); }));
 document.querySelectorAll("input[name=tool]").forEach(r => r.addEventListener("change", () => { state.tool = r.value; save(); render(); }));
 let tmr = null;
