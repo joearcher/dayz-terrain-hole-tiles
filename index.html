@@ -250,7 +250,6 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
   </section>
 
   <div class="foot">
-    <p>Source and notes: <a href="https://github.com/joearcher/dayz-terrain-hole-tiles">github.com/joearcher/dayz-terrain-hole-tiles</a>. Not affiliated with Bohemia Interactive.</p>
     <p><b>How the tiles work.</b> A tile is one heightmap cell. Its index is the world coordinate divided by the terrain's grid size, rounded down, counted from the south-west corner: X first, then Z (north). Tile {x, z} covers x·g to (x+1)·g and z·g to (z+1)·g metres.</p>
     <p><b>Nasdara status.</b> The 4 m grid, the vanilla hole list and the config merge were measured on a dedicated server (1.30). A mod's <code>Holes</code> group was added alongside the vanilla groups, <code>SurfaceIsHole</code> reported exactly the new tiles as holes, and the hole has since been checked in game. Load the mod on clients too, since the hole has to exist in their terrain as well.</p>
   </div>
