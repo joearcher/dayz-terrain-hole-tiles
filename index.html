@@ -86,7 +86,11 @@ textarea { width: 100%; box-sizing: border-box; min-height: 200px; font: 13px/1.
 :focus-visible { outline: 2px solid var(--point); outline-offset: 2px; }
 .errors { margin: 0; padding: 8px 12px; border-radius: 4px; background: var(--accent-soft); color: var(--warn); font-size: 13.5px; }
 .gridwrap { position: relative; width: 100%; max-width: 640px; }
-canvas { display: block; width: 100%; aspect-ratio: 1 / 1; max-width: 100%; cursor: crosshair; touch-action: manipulation; border-radius: 4px; }
+canvas { display: block; width: 100%; aspect-ratio: 1 / 1; max-width: 100%; cursor: crosshair; touch-action: none; border-radius: 4px; }
+canvas.pan { cursor: grab; }
+canvas.dragging { cursor: grabbing; }
+.toolbar .btn { min-width: 2.4em; }
+.sw.edge { border: 2px solid var(--ink); background: transparent; }
 .readout { font: 13px/1.5 var(--f-mono); min-height: 3em; color: var(--ink); }
 .readout .dim { color: var(--muted); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
@@ -125,7 +129,7 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
   <header>
     <div>
       <h1>Terrain Hole Tiles</h1>
-      <p class="lede">Convert DayZ world positions into heightmap tile coordinates for a world's <code>Holes</code> config. Paste positions from the game or an editor, then click tiles on the grid to add or remove them, and copy the finished config.</p>
+      <p class="lede">Convert DayZ world positions into heightmap tile coordinates for a world's <code>Holes</code> config. Paste positions from the game or an editor, paint or erase tiles on the grid, then copy or download the finished config.</p>
     </div>
     <div class="mapbar">
       <label for="map">Map</label>
@@ -155,7 +159,12 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
     <section class="panel" aria-labelledby="hPos">
       <h2 id="hPos">Positions</h2>
       <p class="help">One per line. <code>X, Y, Z</code> as DayZ prints it (height in the middle is ignored), <code>X Z</code> pairs, or tiles typed directly as <code>{ 1417, 3415 }</code>. Text after <code>#</code> is a label. Lines without numbers, such as <code>class</code> or <code>tiles[] =</code>, are skipped, so you can paste an existing <code>tiles[]</code> block back in.</p>
-      <textarea id="pos" spellcheck="false" aria-label="Positions"></textarea>
+      <textarea id="pos" spellcheck="false" aria-label="Positions" placeholder="5670.22, 276.72, 13661.87  # my bunker entrance"></textarea>
+      <div class="row">
+        <button class="btn" id="loadExample" type="button">Load example</button>
+        <button class="btn" id="clearPos" type="button">Clear positions</button>
+        <span class="help">Each map keeps its own positions and edits.</span>
+      </div>
       <p class="errors" id="errors" hidden></p>
       <div class="row" role="radiogroup" aria-label="Tiles from each position">
         <span class="help">Tiles from positions:</span>
@@ -174,19 +183,27 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
 
     <section class="panel" aria-labelledby="hGrid">
       <h2 id="hGrid">Tile grid <span class="count">north up</span></h2>
-      <div class="gridwrap" id="gridwrap"><canvas id="grid" aria-label="Tile grid around the selected tiles. Click a tile to add or remove it."></canvas></div>
-      <div class="readout" id="readout"></div>
+      <div class="row toolbar">
+        <span class="seg" role="radiogroup" aria-label="Dragging on the grid">
+          <input type="radio" name="tool" id="tEdit" value="edit"><label for="tEdit">Paint tiles</label>
+          <input type="radio" name="tool" id="tPan" value="pan"><label for="tPan">Move view</label>
+        </span>
+        <button class="btn" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+        <button class="btn" id="zoomOut" type="button" aria-label="Zoom out">&minus;</button>
+        <button class="btn" id="fit" type="button">Fit</button>
+        <button class="btn" id="undo" type="button">Undo</button>
+        <button class="btn" id="resetEdits" type="button">Reset edits</button>
+      </div>
+      <div class="gridwrap" id="gridwrap"><canvas id="grid" tabindex="0" aria-label="Tile grid. Arrow keys move the cursor, Space adds or removes the tile, plus and minus zoom, F fits the view."></canvas></div>
+      <div class="readout" id="readout" aria-live="polite"></div>
       <div class="legend">
-        <span><i class="sw new"></i>Hole tiles you're adding</span>
+        <span><i class="sw new"></i>Hole tiles in your list</span>
         <span><i class="sw van"></i>Already a hole in vanilla</span>
         <span><i class="sw pt"></i>Your positions</span>
+        <span><i class="sw edge"></i>Edge of the terrain</span>
       </div>
-      <div class="row">
-        <button class="btn" id="zoomIn" type="button">Zoom in</button>
-        <button class="btn" id="zoomOut" type="button">Zoom out</button>
-        <button class="btn" id="resetClicks" type="button">Undo clicks</button>
-        <span class="help" id="clickInfo"></span>
-      </div>
+      <p class="help" id="gridHelp">Click or drag to paint tiles; start on a tile that's in your list to erase instead. Scroll to zoom. To pan, use Move view, hold Shift, or drag with the right mouse button. Ctrl+Z undoes.</p>
+      <p class="help" id="editInfo"></p>
     </section>
   </div>
 
@@ -204,6 +221,7 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
       <label>Holes group name<input type="text" id="group"></label>
       <label>Mod patch name (CfgPatches)<input type="text" id="patch"></label>
     </div>
+    <p class="help">Give the group your own prefix. A group with the same name as a vanilla group replaces it.</p>
     <label class="check"><input type="checkbox" id="skipVan"> Leave out tiles that are already vanilla holes</label>
     <p class="errors" id="groupWarn" hidden></p>
     <div class="tabs" role="tablist">
@@ -211,7 +229,7 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
       <button type="button" role="tab" id="tabHoles" aria-selected="false">Holes block only</button>
     </div>
     <pre class="config" id="cfgOut"></pre>
-    <div class="row"><button class="btn primary" id="copy" type="button">Copy config</button><span class="status" id="copyStatus" role="status"></span></div>
+    <div class="row"><button class="btn primary" id="copy" type="button">Copy config</button><button class="btn" id="download" type="button">Download</button><span class="status" id="copyStatus" role="status"></span></div>
   </section>
 
   <section class="panel" aria-labelledby="hChk">
@@ -240,43 +258,58 @@ function holeSet(list) {
 const MAPS = {
   nasdara: { name: "Nasdara", grid: 4, world: 16384, cls: "nasdara", parent: "CAWorld", patch: "DZ_Worlds_Nasdara",
     holes: holeSet(NASDARA_HOLES.split(";").filter(Boolean).map(p => p.split(",").map(Number))), groups: NASDARA_GROUPS,
-    note: "Grid size measured on a 1.30 server: the terrain's slope breaks and every hole edge fall on 4 m lines. The hatched tiles are all 556 vanilla hole tiles found by scanning the whole map with SurfaceIsHole. Nasdara's own config has 33 Holes groups." },
+    note: "Grid size measured on a 1.30 server: the terrain's slope breaks and every hole edge fall on 4 m lines. The hatched tiles are all 556 vanilla hole tiles found by scanning the whole map with SurfaceIsHole. Nasdara's own config has 33 Holes groups.",
+    example: ["# Examples near an irrigation shaft north of Nasdara. Replace with your own.",
+      "5670.22, 276.72, 13661.87  # TXS_0003 shaft (already a hole)",
+      "5690.11, 267.39, 13645.47  # opening over the tunnel",
+      "<5699.8, 266.1, 13640.2>   # second opening",
+      "{ 1425, 3410 }             # a tile typed directly"].join("\n") },
   sakhal: { name: "Sakhal", grid: 3.75, world: 15360, cls: "Sakhal", parent: "CAWorld", patch: "DZ_Worlds_Sakhal",
     holes: null, groups: [],
-    note: "Grid size from the BI wiki table. Sakhal's vanilla holes aren't known here (its world config is encrypted), and its parent class wasn't checked." },
+    note: "Grid size from the BI wiki table. Sakhal's vanilla holes aren't known here (its world config is encrypted), and its parent class wasn't checked.",
+    example: ["# The BI wiki's Sakhal example. Replace with your own.", "333.9, 0, 588.9  # wiki example, tile { 89, 157 }"].join("\n") },
   enoch: { name: "Livonia", grid: 6.25, world: 12800, cls: "Enoch", parent: "CAWorld", patch: "DZ_Worlds_Enoch",
     holes: holeSet([[118,195],[118,196],[118,197],[94,180],[95,180],[94,181],[95,181]]), groups: ["Dambog"],
-    note: "Grid size from the BI wiki table. The vanilla Dambog group (7 tiles) lines up with the bunker's two entrance triggers at this size." },
+    note: "Grid size from the BI wiki table. The vanilla Dambog group (7 tiles) lines up with the bunker's two entrance triggers at this size.",
+    example: ["# Dambog bunker entrance triggers. Replace with your own.",
+      "735.0, 533.7, 1229.1   # main entrance, west trigger",
+      "749.7, 533.5, 1228.5   # main entrance, east trigger",
+      "593.7, 588.75, 1131.8  # second entrance"].join("\n") },
   chernarusplus: { name: "Chernarus", grid: 7.5, world: 15360, cls: "ChernarusPlus", parent: "CAWorld", patch: "DZ_Worlds_Chernarusplus_World",
     holes: holeSet([]), groups: [],
-    note: "Grid size from the BI wiki table. Vanilla Chernarus has no Holes class." },
+    note: "Grid size from the BI wiki table. Vanilla Chernarus has no Holes class.",
+    example: ["# The BI wiki's Chernarus example. Replace with your own.", "671.2, 0, 1180.68  # wiki example, tile { 89, 157 }"].join("\n") },
   custom: { name: "Custom", custom: true, holes: null, groups: [],
-    note: "Enter the terrain's grid size (world size divided by heightmap resolution) and its CfgWorlds class. Buldozer shows the tile under the cursor as Tile = (x, y) if you want to double-check." }
+    note: "Enter the terrain's grid size (world size divided by heightmap resolution) and its CfgWorlds class. Buldozer shows the tile under the cursor as Tile = (x, y) if you want to double-check.",
+    example: "# Positions on your terrain, one per line.\n1000, 0, 1000  # example" }
 };
 
-const SAMPLE = [
-  "# Examples near an irrigation shaft north of Nasdara. Replace with your own.",
-  "5670.22, 276.72, 13661.87  # TXS_0003 shaft (already a hole)",
-  "5690.11, 267.39, 13645.47  # opening over the tunnel",
-  "<5699.8, 266.1, 13640.2>   # second opening",
-  "{ 1425, 3410 }             # a tile typed directly"
-].join("\n");
-
-const DEFAULTS = { map: "nasdara", text: SAMPLE, mode: "point", radius: 3, margin: 4, group: "ZERO_MyHoles", patch: "ZERO_TerrainHoles", skipVan: true, tab: "mod",
-  added: [], removed: [], custom: { grid: 4, world: 16384, cls: "MyWorld", parent: "CAWorld", patch: "" } };
-const KEY = "terrain-hole-tiles.v1";
-let state = JSON.parse(JSON.stringify(DEFAULTS));
+const KEY = "terrain-hole-tiles.v2";
+function freshMaps() {
+  const o = {};
+  for (const k in MAPS) o[k] = { text: MAPS[k].example, added: [], removed: [] };
+  return o;
+}
+const DEFAULTS = { map: "nasdara", mode: "point", radius: 3, group: "MyMod_Holes", patch: "MyMod_TerrainHoles", skipVan: true, tab: "mod", tool: "edit",
+  custom: { grid: 4, world: 16384, cls: "MyWorld", parent: "CAWorld", patch: "" } };
+let state = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), { maps: freshMaps() });
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || "null");
-  if (saved && typeof saved === "object") state = Object.assign(state, saved, { custom: Object.assign({}, DEFAULTS.custom, saved.custom || {}) });
+  if (saved && typeof saved === "object") {
+    const maps = freshMaps();
+    for (const k in maps) if (saved.maps && saved.maps[k]) Object.assign(maps[k], saved.maps[k]);
+    state = Object.assign(state, saved, { maps, custom: Object.assign({}, DEFAULTS.custom, saved.custom || {}) });
+    if (!MAPS[state.map]) state.map = "nasdara";
+  }
 } catch (e) {}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+const cur = () => state.maps[state.map];
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const key = (x, z) => x + "," + z;
-const fmt = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d).replace(/\.?0+$/, "") || "0";
-const fm = v => { const s = (Math.round(v * 1000) / 1000).toString(); return s; };
+const fmt = v => (Math.round(v * 100) / 100).toString();
+const fm = v => (Math.round(v * 1000) / 1000).toString();
 
 function getMap() {
   const m = MAPS[state.map] || MAPS.nasdara;
@@ -308,17 +341,16 @@ function parse(text) {
 }
 
 function compute() {
-  const m = getMap(), g = m.grid, max = Math.round(m.world / g);
-  const { points, tiles, errors } = parse(state.text);
+  const m = getMap(), g = m.grid, max = Math.round(m.world / g), ms = cur();
+  const { points, tiles, errors } = parse(ms.text);
   const found = new Map();
   const addTile = (tx, tz, src) => { const k = key(tx, tz); if (!found.has(k)) found.set(k, { tx, tz, src: new Set() }); found.get(k).src.add(src); };
   const r = Math.max(0, +state.radius || 0);
-  points.forEach((p, i) => {
+  points.forEach(p => {
     p.tx = tileOf(p.x, g); p.tz = tileOf(p.z, g);
     p.name = p.label || ("line " + p.line);
     p.ox = p.x - p.tx * g; p.oz = p.z - p.tz * g;
-    const near = [];
-    const lim = 0.5;
+    const near = [], lim = 0.5;
     if (p.ox < lim) near.push(["west", p.ox, p.tx - 1, p.tz]);
     if (g - p.ox < lim) near.push(["east", g - p.ox, p.tx + 1, p.tz]);
     if (p.oz < lim) near.push(["south", p.oz, p.tx, p.tz - 1]);
@@ -346,41 +378,75 @@ function compute() {
     else for (let tx = tx0; tx <= tx1; tx++) for (let tz = tz0; tz <= tz1; tz++) addTile(tx, tz, "box");
   }
   tiles.forEach(t => addTile(t.tx, t.tz, t.label ? "typed: " + t.label : "typed (line " + t.line + ")"));
-  const added = new Set(state.added), removed = new Set(state.removed);
-  for (const k of added) { if (!found.has(k)) { const [tx, tz] = k.split(",").map(Number); found.set(k, { tx, tz, src: new Set(["clicked"]) }); } }
-  const final = [];
+  const computed = new Set(found.keys());
+  const added = new Set(ms.added), removed = new Set(ms.removed);
+  for (const k of added) { if (!found.has(k)) { const [tx, tz] = k.split(",").map(Number); found.set(k, { tx, tz, src: new Set(["painted"]) }); } }
+  const final = [], finalKeys = new Set();
   for (const [k, t] of found) {
     if (removed.has(k)) continue;
     t.vanilla = m.holes ? m.holes.has(k) : null;
     t.outside = t.tx < 0 || t.tz < 0 || t.tx >= max || t.tz >= max;
-    final.push(t);
+    final.push(t); finalKeys.add(k);
   }
   final.sort((a, b) => a.tx - b.tx || a.tz - b.tz);
-  return { m, g, max, points, tiles, errors, final, box, r };
+  return { m, g, max, points, tiles, errors, final, finalKeys, computed, box, r };
 }
 
-let C = {}, view = null, hover = null, last = null;
+// ---- Editing (paint / erase / undo) ----
+const undoStacks = {};
+function pushUndo() {
+  const ms = cur(), st = undoStacks[state.map] || (undoStacks[state.map] = []);
+  st.push(JSON.stringify({ added: ms.added, removed: ms.removed }));
+  if (st.length > 200) st.shift();
+}
+function undo() {
+  const st = undoStacks[state.map];
+  if (!st || !st.length) return;
+  const s = JSON.parse(st.pop()), ms = cur();
+  ms.added = s.added; ms.removed = s.removed;
+  save(); render();
+}
+// Make tile k selected (on = true) or not, recording it as an edit on top of the positions.
+function setTile(k, on) {
+  const ms = cur(), added = new Set(ms.added), removed = new Set(ms.removed), comp = last.computed;
+  if (on) { removed.delete(k); if (!comp.has(k)) added.add(k); }
+  else { added.delete(k); if (comp.has(k)) removed.add(k); }
+  ms.added = [...added]; ms.removed = [...removed];
+}
+
+// ---- View (pan / zoom), independent of edits ----
+let view = { cx: 0, cz: 0, span: 24 }, geo = null, hover = null, last = null, fitKey = "", C = {};
+function fitView() {
+  const res = last, xs = [], zs = [];
+  res.final.forEach(t => { xs.push(t.tx); zs.push(t.tz); });
+  res.points.forEach(p => { xs.push(p.tx); zs.push(p.tz); });
+  if (!xs.length) { view = { cx: res.max / 2, cz: res.max / 2, span: Math.min(res.max, 64) }; return; }
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+  view = { cx: (x0 + x1 + 1) / 2, cz: (z0 + z1 + 1) / 2, span: Math.max(12, Math.max(x1 - x0 + 1, z1 - z0 + 1) + 8) };
+  clampView();
+}
+function clampView() {
+  const max = last ? last.max : 4096;
+  view.span = Math.min(Math.max(view.span, 4), max * 1.25);
+  view.cx = Math.min(Math.max(view.cx, -max * 0.1), max * 1.1);
+  view.cz = Math.min(Math.max(view.cz, -max * 0.1), max * 1.1);
+}
+function zoomAt(factor, mx, my) {
+  if (!geo) return;
+  const fx = view.cx - view.span / 2 + (mx - geo.L) / geo.cell;
+  const fz = view.cz - view.span / 2 + (geo.T + geo.P - my) / geo.cell;
+  const ns = Math.min(Math.max(view.span * factor, 4), last.max * 1.25);
+  view.cx = fx - (mx - geo.L) / geo.P * ns + ns / 2;
+  view.cz = fz - (geo.T + geo.P - my) / geo.P * ns + ns / 2;
+  view.span = ns;
+  clampView(); draw();
+}
 
 function colors() {
   const cs = getComputedStyle(document.documentElement);
   const v = n => cs.getPropertyValue(n).trim();
   return { panel: v("--panel"), paper: v("--paper"), ink: v("--ink"), muted: v("--muted"), line: v("--line"), grid: v("--gridline"),
-    accent: v("--accent"), void: v("--void"), hatch: v("--hatch"), point: v("--point"), bad: v("--bad"), mono: v("--f-mono") };
-}
-
-function computeView(res) {
-  const xs = [], zs = [];
-  res.final.forEach(t => { xs.push(t.tx); zs.push(t.tz); });
-  res.points.forEach(p => { xs.push(p.tx); zs.push(p.tz); });
-  let cx, cz, span;
-  if (!xs.length) { cx = res.max / 2; cz = res.max / 2; span = 16; }
-  else {
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
-    cx = (x0 + x1 + 1) / 2; cz = (z0 + z1 + 1) / 2;
-    span = Math.max(x1 - x0 + 1, z1 - z0 + 1);
-  }
-  span = Math.min(600, Math.max(6, Math.round(span + 2 * state.margin)));
-  return { x0: Math.round(cx - span / 2), z0: Math.round(cz - span / 2), span };
+    accent: v("--accent"), void: v("--void"), hatch: v("--hatch"), point: v("--point"), mono: v("--f-mono") };
 }
 
 function draw() {
@@ -388,153 +454,166 @@ function draw() {
   const res = last, cv = $("#grid");
   const W = Math.max(220, Math.round(cv.getBoundingClientRect().width)), H = W;
   const dpr = window.devicePixelRatio || 1;
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
   const ctx = cv.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   C = colors();
   ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
-  const L = 44, B = 26, T = 8, R = 8;
+  const L = 46, B = 26, T = 8, R = 8;
   const P = Math.min(W - L - R, H - T - B);
-  view = computeView(res);
-  const cell = P / view.span;
-  view.cell = cell; view.L = L; view.T = T; view.P = P;
-  const px = tx => L + (tx - view.x0) * cell;
-  const py = tz => T + P - (tz - view.z0 + 1) * cell;
+  const cell = P / view.span, x0 = view.cx - view.span / 2, z0 = view.cz - view.span / 2;
+  geo = { L, T, P, cell, x0, z0 };
+  const px = tx => L + (tx - x0) * cell;
+  const py = tz => T + P - (tz - z0 + 1) * cell;
+  const inView = (tx, tz) => tx >= Math.floor(x0) - 1 && tz >= Math.floor(z0) - 1 && tx <= x0 + view.span && tz <= z0 + view.span;
   ctx.fillStyle = C.panel; ctx.fillRect(L, T, P, P);
   ctx.save(); ctx.beginPath(); ctx.rect(L, T, P, P); ctx.clip();
 
-  // Vanilla holes, hatched
-  if (res.m.holes) {
-    const pc = document.createElement("canvas"); pc.width = pc.height = 8;
-    const p2 = pc.getContext("2d"); p2.fillStyle = C.void; p2.fillRect(0, 0, 8, 8);
-    p2.strokeStyle = C.hatch; p2.lineWidth = 1.5; p2.beginPath(); p2.moveTo(-2, 10); p2.lineTo(10, -2); p2.moveTo(-2, 2); p2.lineTo(2, -2); p2.moveTo(6, 10); p2.lineTo(10, 6); p2.stroke();
-    ctx.fillStyle = ctx.createPattern(pc, "repeat");
+  // Outside the terrain
+  ctx.fillStyle = C.paper;
+  const ex0 = px(0), ex1 = px(res.max), ey0 = py(res.max - 1), ey1 = py(-1);
+  ctx.fillRect(L, T, Math.max(0, ex0 - L), P); ctx.fillRect(ex1, T, Math.max(0, L + P - ex1), P);
+  ctx.fillRect(L, T, P, Math.max(0, ey0 - T)); ctx.fillRect(L, ey1, P, Math.max(0, T + P - ey1));
+
+  // Small tiles still get a visible mark when zoomed far out
+  const mark = Math.max(cell, 3), off = (cell - mark) / 2;
+  // Vanilla holes
+  if (res.m.holes && res.m.holes.size) {
+    if (cell >= 6) {
+      const pc = document.createElement("canvas"); pc.width = pc.height = 8;
+      const p2 = pc.getContext("2d"); p2.fillStyle = C.void; p2.fillRect(0, 0, 8, 8);
+      p2.strokeStyle = C.hatch; p2.lineWidth = 1.5; p2.beginPath(); p2.moveTo(-2, 10); p2.lineTo(10, -2); p2.moveTo(-2, 2); p2.lineTo(2, -2); p2.moveTo(6, 10); p2.lineTo(10, 6); p2.stroke();
+      ctx.fillStyle = ctx.createPattern(pc, "repeat");
+    } else ctx.fillStyle = C.void;
     for (const k of res.m.holes) {
       const [tx, tz] = k.split(",").map(Number);
-      if (tx < view.x0 || tz < view.z0 || tx >= view.x0 + view.span || tz >= view.z0 + view.span) continue;
-      ctx.fillRect(px(tx), py(tz), cell, cell);
+      if (inView(tx, tz)) ctx.fillRect(px(tx) + off, py(tz) + off, mark, mark);
     }
   }
-  // Selected tiles
+  // Tiles in the list
   for (const t of res.final) {
-    ctx.fillStyle = C.accent; ctx.globalAlpha = t.vanilla ? 0.55 : 0.9;
-    ctx.fillRect(px(t.tx) + 0.5, py(t.tz) + 0.5, cell - 1, cell - 1);
+    if (!inView(t.tx, t.tz)) continue;
+    ctx.fillStyle = C.accent; ctx.globalAlpha = t.vanilla ? 0.55 : 0.92;
+    if (cell >= 4) ctx.fillRect(px(t.tx) + 0.5, py(t.tz) + 0.5, cell - 1, cell - 1);
+    else ctx.fillRect(px(t.tx) + off, py(t.tz) + off, mark, mark);
     ctx.globalAlpha = 1;
-    if (t.vanilla) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.strokeRect(px(t.tx) + 1, py(t.tz) + 1, cell - 2, cell - 2); }
+    if (t.vanilla && cell >= 6) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.strokeRect(px(t.tx) + 1, py(t.tz) + 1, cell - 2, cell - 2); }
   }
   // Grid lines
-  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500];
-  const lstep = steps.find(s => s * cell >= 36) || 1000;
+  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const lstep = steps.find(s => s * cell >= 38) || 2000;
   ctx.lineWidth = 1;
-  for (let i = 0; i <= view.span; i++) {
-    const tx = view.x0 + i, tz = view.z0 + i;
-    const xMajor = tx % lstep === 0, zMajor = tz % lstep === 0;
-    if (cell >= 5 || xMajor) { ctx.strokeStyle = xMajor ? C.line : C.grid; ctx.beginPath(); ctx.moveTo(Math.round(L + i * cell) + 0.5, T); ctx.lineTo(Math.round(L + i * cell) + 0.5, T + P); ctx.stroke(); }
-    if (cell >= 5 || zMajor) { ctx.strokeStyle = zMajor ? C.line : C.grid; ctx.beginPath(); ctx.moveTo(L, Math.round(T + P - i * cell) + 0.5); ctx.lineTo(L + P, Math.round(T + P - i * cell) + 0.5); ctx.stroke(); }
+  for (let tx = Math.ceil(x0); tx <= x0 + view.span; tx++) {
+    const major = tx % lstep === 0;
+    if (cell < 5 && !major) continue;
+    ctx.strokeStyle = major ? C.line : C.grid;
+    const x = Math.round(px(tx)) + 0.5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + P); ctx.stroke();
   }
+  for (let tz = Math.ceil(z0); tz <= z0 + view.span; tz++) {
+    const major = tz % lstep === 0;
+    if (cell < 5 && !major) continue;
+    ctx.strokeStyle = major ? C.line : C.grid;
+    const y = Math.round(py(tz - 1)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(L + P, y); ctx.stroke();
+  }
+  // Terrain edge
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.strokeRect(ex0, ey0, ex1 - ex0, ey1 - ey0);
   // Box and radius outlines, then positions
-  const wx = x => L + (x / res.g - view.x0) * cell, wz = z => T + P - (z / res.g - view.z0) * cell;
+  const wx = x => L + (x / res.g - x0) * cell, wz = z => T + P - (z / res.g - z0) * cell;
   ctx.setLineDash([5, 4]); ctx.strokeStyle = C.point; ctx.lineWidth = 1.5;
   if (res.box) ctx.strokeRect(wx(res.box.x0), wz(res.box.z1), (res.box.x1 - res.box.x0) / res.g * cell, (res.box.z1 - res.box.z0) / res.g * cell);
   if (state.mode === "radius" && res.r > 0) res.points.forEach(p => { ctx.beginPath(); ctx.arc(wx(p.x), wz(p.z), res.r / res.g * cell, 0, Math.PI * 2); ctx.stroke(); });
   ctx.setLineDash([]);
   res.points.forEach(p => {
     const x = wx(p.x), y = wz(p.z);
+    if (x < L - 10 || x > L + P + 10 || y < T - 10 || y > T + P + 10) return;
     ctx.strokeStyle = C.panel; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
     ctx.strokeStyle = C.point; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(x - 9, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 9); ctx.stroke();
   });
-  // Hover outline
-  if (hover) { ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.strokeRect(px(hover.tx) + 1, py(hover.tz) + 1, cell - 2, cell - 2); }
+  // Cursor
+  if (hover && inView(hover.tx, hover.tz)) {
+    const s = Math.max(cell, 6), o = (cell - s) / 2;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.strokeRect(px(hover.tx) + o + 1, py(hover.tz) + o + 1, s - 2, s - 2);
+  }
   ctx.restore();
   ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.strokeRect(L + 0.5, T + 0.5, P - 1, P - 1);
 
   // Axis labels (tile indices)
   ctx.fillStyle = C.muted; ctx.font = "11px " + (C.mono || "monospace");
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let i = 0; i <= view.span; i++) {
-    const tx = view.x0 + i;
-    if (tx % lstep === 0) { const x = L + (i + 0.5) * cell; if (x > L && x < L + P) ctx.fillText(String(tx), x, T + P + 6); }
+  for (let tx = Math.ceil(x0 / lstep) * lstep; tx < x0 + view.span; tx += lstep) {
+    const x = px(tx + 0.5); if (x > L + 8 && x < L + P - 8) ctx.fillText(String(tx), x, T + P + 6);
   }
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  for (let i = 0; i <= view.span; i++) {
-    const tz = view.z0 + i;
-    if (tz % lstep === 0) { const y = T + P - (i + 0.5) * cell; if (y > T && y < T + P) ctx.fillText(String(tz), L - 6, y); }
+  for (let tz = Math.ceil(z0 / lstep) * lstep; tz < z0 + view.span; tz += lstep) {
+    const y = py(tz) + cell / 2; if (y > T + 6 && y < T + P - 6) ctx.fillText(String(tz), L - 6, y);
   }
-  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillStyle = C.muted; ctx.font = "600 12px " + (C.mono || "monospace");
+  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.font = "600 12px " + (C.mono || "monospace");
   ctx.fillText("N ↑", L + P - 6, T + 6);
 }
 
-function tileAt(ev) {
-  if (!view) return null;
-  const rc = $("#grid").getBoundingClientRect();
-  const mx = ev.clientX - rc.left, my = ev.clientY - rc.top;
-  if (mx < view.L || my < view.T || mx >= view.L + view.P || my >= view.T + view.P) return null;
-  return { tx: view.x0 + Math.floor((mx - view.L) / view.cell), tz: view.z0 + Math.floor((view.T + view.P - my) / view.cell) };
+function tileAtXY(mx, my) {
+  if (!geo || mx < geo.L || my < geo.T || mx >= geo.L + geo.P || my >= geo.T + geo.P) return null;
+  return { tx: Math.floor(geo.x0 + (mx - geo.L) / geo.cell), tz: Math.floor(geo.z0 + (geo.T + geo.P - my) / geo.cell) };
 }
+function localXY(ev) { const rc = $("#grid").getBoundingClientRect(); return [ev.clientX - rc.left, ev.clientY - rc.top]; }
 
 function readout() {
   const el = $("#readout");
   if (!last) return;
-  if (!hover) { el.innerHTML = '<span class="dim">Point at a tile to see its world bounds. Click it to add or remove it.</span>'; return; }
+  if (!hover) { el.innerHTML = '<span class="dim">Point at a tile to see its world bounds.</span>'; return; }
   const g = last.g, k = key(hover.tx, hover.tz);
-  const sel = last.final.some(t => t.tx === hover.tx && t.tz === hover.tz);
+  const sel = last.finalKeys.has(k);
   const van = last.m.holes ? last.m.holes.has(k) : null;
+  const outside = hover.tx < 0 || hover.tz < 0 || hover.tx >= last.max || hover.tz >= last.max;
   let status = sel ? "in your list" : "not in your list";
   if (van) status += " · already a vanilla hole";
+  if (outside) status += " · outside the terrain";
   el.innerHTML = "{ " + hover.tx + ", " + hover.tz + " } &nbsp; x " + fm(hover.tx * g) + "–" + fm((hover.tx + 1) * g) + " &nbsp; z " + fm(hover.tz * g) + "–" + fm((hover.tz + 1) * g) +
     '<br><span class="dim">' + status + "</span>";
 }
 
-function toggle(t) {
-  const k = key(t.tx, t.tz);
-  const inFinal = last.final.some(f => f.tx === t.tx && f.tz === t.tz);
-  const added = new Set(state.added), removed = new Set(state.removed);
-  if (inFinal) { if (added.has(k)) added.delete(k); else removed.add(k); }
-  else { if (removed.has(k)) removed.delete(k); else added.add(k); }
-  state.added = [...added]; state.removed = [...removed];
-  save(); render();
-}
-
+// ---- Config ----
 function buildConfig(res) {
   const tiles = res.final.filter(t => !(state.skipVan && t.vanilla) && !t.outside);
-  const group = (state.group || "ZERO_MyHoles").replace(/[^A-Za-z0-9_]/g, "_");
-  const patch = (state.patch || "ZERO_TerrainHoles").replace(/[^A-Za-z0-9_]/g, "_");
+  const group = (state.group || "MyMod_Holes").replace(/[^A-Za-z0-9_]/g, "_");
+  const patch = (state.patch || "MyMod_TerrainHoles").replace(/[^A-Za-z0-9_]/g, "_");
   const lines = tiles.map((t, i) => "{ " + t.tx + ", " + t.tz + " }" + (i < tiles.length - 1 ? "," : ""));
   const block = ind => {
     const I = "\t".repeat(ind);
     if (!lines.length) return I + "class " + group + "\n" + I + "{\n" + I + "\t// No tiles yet\n" + I + "\ttiles[] = {};\n" + I + "};";
     return I + "class " + group + "\n" + I + "{\n" + I + "\ttiles[] =\n" + I + "\t{\n" + lines.map(l => I + "\t\t" + l).join("\n") + "\n" + I + "\t};\n" + I + "};";
   };
-  const holes = "class Holes\n{\n" + block(1) + "\n};";
+  const holes = "class Holes\n{\n" + block(1) + "\n};\n";
   const req = ['"DZ_Data"'];
   if (res.m.patch) req.push('"' + res.m.patch + '"');
   const mod = "class CfgPatches\n{\n\tclass " + patch + "\n\t{\n\t\tunits[] = {};\n\t\tweapons[] = {};\n\t\trequiredVersion = 0.1;\n\t\trequiredAddons[] = { " + req.join(", ") + " };\n\t};\n};\n\n" +
-    "class CfgWorlds\n{\n\tclass " + res.m.parent + ";\n\tclass " + res.m.cls + ": " + res.m.parent + "\n\t{\n\t\tclass Holes\n\t\t{\n" + block(3) + "\n\t\t};\n\t};\n};";
-  return { text: state.tab === "holes" ? holes : mod, count: tiles.length, group };
+    "class CfgWorlds\n{\n\tclass " + res.m.parent + ";\n\tclass " + res.m.cls + ": " + res.m.parent + "\n\t{\n\t\tclass Holes\n\t\t{\n" + block(3) + "\n\t\t};\n\t};\n};\n";
+  return { text: state.tab === "holes" ? holes : mod, file: state.tab === "holes" ? "holes.cfg" : "config.cpp", count: tiles.length, group };
 }
 
+const ROW_LIMIT = 400;
 function renderTables(res) {
   const g = res.g;
   const pt = $("#ptTable");
-  if (!res.points.length) pt.innerHTML = '<tr><td class="note">No positions yet. Paste some into the box above.</td></tr>';
-  else pt.innerHTML = "<tr><th>Position</th><th>X</th><th>Z</th><th>Tile</th><th>Inside tile</th><th>Notes</th></tr>" + res.points.map(p => {
+  if (!res.points.length) pt.innerHTML = '<tr><td class="note">No positions yet. Paste some into the box above, or paint tiles on the grid.</td></tr>';
+  else pt.innerHTML = "<tr><th>Position</th><th>X</th><th>Z</th><th>Tile</th><th>Inside tile</th><th>Notes</th></tr>" + res.points.slice(0, ROW_LIMIT).map(p => {
     const notes = [];
     p.near.forEach(n => notes.push(fmt(n[1]) + " m from the " + n[0] + " edge; the opening may also need { " + n[2] + ", " + n[3] + " }"));
     if (res.m.holes && res.m.holes.has(key(p.tx, p.tz))) notes.push("this tile is already a vanilla hole");
     if (p.tx < 0 || p.tz < 0 || p.tx >= res.max || p.tz >= res.max) notes.push("outside the terrain");
-    return "<tr><td>" + esc(p.name) + '</td><td class="mono">' + fm(p.x) + '</td><td class="mono">' + fm(p.z) + '</td><td class="mono">{ ' + p.tx + ", " + p.tz + ' }</td><td class="mono">' + fmt(p.ox) + ", " + fmt(p.oz) + ' m</td><td class="note">' + (notes.length ? esc(notes.join("; ")) : "") + "</td></tr>";
-  }).join("");
+    return "<tr><td>" + esc(p.name) + '</td><td class="mono">' + fm(p.x) + '</td><td class="mono">' + fm(p.z) + '</td><td class="mono">{ ' + p.tx + ", " + p.tz + ' }</td><td class="mono">' + fmt(p.ox) + ", " + fmt(p.oz) + ' m</td><td class="note">' + esc(notes.join("; ")) + "</td></tr>";
+  }).join("") + (res.points.length > ROW_LIMIT ? '<tr><td class="note" colspan="6">Showing the first ' + ROW_LIMIT + " of " + res.points.length + " positions.</td></tr>" : "");
   const tt = $("#tileTable");
-  if (!res.final.length) tt.innerHTML = '<tr><td class="note">No tiles selected.</td></tr>';
-  else tt.innerHTML = "<tr><th>Tile</th><th>X range (m)</th><th>Z range (m)</th><th>Centre</th><th>Status</th><th>From</th></tr>" + res.final.map(t => {
+  if (!res.final.length) tt.innerHTML = '<tr><td class="note">No tiles in your list.</td></tr>';
+  else tt.innerHTML = "<tr><th>Tile</th><th>X range (m)</th><th>Z range (m)</th><th>Centre</th><th>Status</th><th>From</th></tr>" + res.final.slice(0, ROW_LIMIT).map(t => {
     let pill = '<span class="pill new">new hole</span>';
     if (t.outside) pill = '<span class="pill out">outside terrain</span>';
     else if (t.vanilla) pill = '<span class="pill van">vanilla hole</span>';
     else if (t.vanilla === null) pill = '<span class="pill new">new (vanilla unknown)</span>';
     return '<tr><td class="mono">{ ' + t.tx + ", " + t.tz + ' }</td><td class="mono">' + fm(t.tx * g) + " – " + fm((t.tx + 1) * g) + '</td><td class="mono">' + fm(t.tz * g) + " – " + fm((t.tz + 1) * g) +
       '</td><td class="mono">' + fm((t.tx + 0.5) * g) + ", " + fm((t.tz + 0.5) * g) + "</td><td>" + pill + '</td><td class="note">' + esc([...t.src].join(", ")) + "</td></tr>";
-  }).join("");
+  }).join("") + (res.final.length > ROW_LIMIT ? '<tr><td class="note" colspan="6">Showing the first ' + ROW_LIMIT + " of " + res.final.length + " tiles. The config has them all.</td></tr>" : "");
   const nNew = res.final.filter(t => !t.vanilla && !t.outside).length;
   $("#tileCount").textContent = res.final.length + (res.final.length === 1 ? " tile" : " tiles") + (res.final.length !== nNew ? " · " + nNew + " new" : "");
 }
@@ -557,11 +636,14 @@ function renderChecks() {
   }).join("");
 }
 
+let cfgText = "", copiedText = null;
 function render() {
   const res = compute();
-  res.mode = state.mode;
   last = res;
-  const m = res.m;
+  const m = res.m, ms = cur();
+  // Refit the view only when the positions, mode or map change, never on paint edits.
+  const fk = [state.map, m.grid, m.world, state.mode, state.radius, ms.text].join("|");
+  if (fk !== fitKey) { fitKey = fk; fitView(); }
   $("#chipGrid").innerHTML = "grid <b>" + m.grid + " m</b>";
   $("#chipTiles").textContent = res.max + " × " + res.max + " tiles";
   $("#chipWorld").textContent = m.world.toLocaleString("en-GB") + " m";
@@ -574,55 +656,138 @@ function render() {
     : "All positions together mark the corners of a box; every tile the box touches is added. Two opposite corners are enough.";
   const er = $("#errors");
   er.hidden = !res.errors.length; er.textContent = res.errors.join(" · ");
-  const nA = state.added.length, nR = state.removed.length;
-  $("#clickInfo").textContent = nA || nR ? (nA + " added and " + nR + " removed by clicking") : "";
-  $("#resetClicks").disabled = !(nA || nR);
+  const nA = ms.added.length, nR = ms.removed.length;
+  $("#editInfo").textContent = nA || nR ? "Painted on " + m.name + ": " + nA + " added, " + nR + " removed." : "";
+  $("#resetEdits").disabled = !(nA || nR);
+  $("#undo").disabled = !(undoStacks[state.map] && undoStacks[state.map].length);
   renderTables(res);
   const cfg = buildConfig(res);
+  cfgText = cfg.text;
   $("#cfgOut").textContent = cfg.text;
   $("#copy").textContent = "Copy config (" + cfg.count + (cfg.count === 1 ? " tile)" : " tiles)");
+  $("#download").textContent = "Download " + cfg.file;
+  if (copiedText !== null && copiedText !== cfg.text) { $("#copyStatus").textContent = ""; copiedText = null; }
   const gw = $("#groupWarn");
   const clash = (m.groups || []).some(n => n.toLowerCase() === cfg.group.toLowerCase());
   gw.hidden = !clash;
   gw.textContent = clash ? "“" + cfg.group + "” is the name of a vanilla " + m.name + " Holes group. Using it would replace those holes; pick a name with your own prefix." : "";
   $("#tabMod").setAttribute("aria-selected", state.tab !== "holes");
   $("#tabHoles").setAttribute("aria-selected", state.tab === "holes");
+  $("#grid").classList.toggle("pan", state.tool === "pan");
   draw(); readout();
 }
 
-// Wire up controls
-$("#map").value = state.map;
-$("#pos").value = state.text;
-$("#radius").value = state.radius;
-$("#group").value = state.group;
-$("#patch").value = state.patch;
-$("#skipVan").checked = !!state.skipVan;
-$("#cGrid").value = state.custom.grid; $("#cWorld").value = state.custom.world; $("#cCls").value = state.custom.cls; $("#cParent").value = state.custom.parent; $("#cPatch").value = state.custom.patch;
-document.querySelectorAll('input[name=mode]').forEach(r => { r.checked = r.value === state.mode; r.addEventListener("change", () => { state.mode = r.value; save(); render(); }); });
+// ---- Controls ----
+function syncInputs() {
+  $("#map").value = state.map;
+  $("#pos").value = cur().text;
+  $("#radius").value = state.radius;
+  $("#group").value = state.group;
+  $("#patch").value = state.patch;
+  $("#skipVan").checked = !!state.skipVan;
+  $("#cGrid").value = state.custom.grid; $("#cWorld").value = state.custom.world; $("#cCls").value = state.custom.cls; $("#cParent").value = state.custom.parent; $("#cPatch").value = state.custom.patch;
+  document.querySelectorAll("input[name=mode]").forEach(r => { r.checked = r.value === state.mode; });
+  document.querySelectorAll("input[name=tool]").forEach(r => { r.checked = r.value === state.tool; });
+}
+syncInputs();
+document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", () => { state.mode = r.value; save(); render(); }));
+document.querySelectorAll("input[name=tool]").forEach(r => r.addEventListener("change", () => { state.tool = r.value; save(); render(); }));
 let tmr = null;
-$("#pos").addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(() => { state.text = $("#pos").value; save(); render(); }, 150); });
-$("#map").addEventListener("change", () => { state.map = $("#map").value; state.added = []; state.removed = []; save(); render(); });
+$("#pos").addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(() => { cur().text = $("#pos").value; save(); render(); }, 150); });
+$("#map").addEventListener("change", () => { clearTimeout(tmr); state.map = $("#map").value; hover = null; $("#pos").value = cur().text; save(); render(); });
+$("#loadExample").addEventListener("click", () => { cur().text = getMap().example; $("#pos").value = cur().text; save(); render(); });
+$("#clearPos").addEventListener("click", () => { cur().text = ""; $("#pos").value = ""; save(); render(); $("#pos").focus(); });
 $("#radius").addEventListener("input", () => { state.radius = +$("#radius").value || 0; save(); render(); });
 $("#group").addEventListener("input", () => { state.group = $("#group").value; save(); render(); });
 $("#patch").addEventListener("input", () => { state.patch = $("#patch").value; save(); render(); });
 $("#skipVan").addEventListener("change", () => { state.skipVan = $("#skipVan").checked; save(); render(); });
 [["#cGrid", "grid", Number], ["#cWorld", "world", Number], ["#cCls", "cls", String], ["#cParent", "parent", String], ["#cPatch", "patch", String]].forEach(([id, f, T]) =>
   $(id).addEventListener("input", () => { state.custom[f] = T($(id).value); save(); render(); }));
-$("#zoomIn").addEventListener("click", () => { state.margin = Math.max(0, state.margin - (state.margin > 8 ? 4 : 2)); save(); draw(); });
-$("#zoomOut").addEventListener("click", () => { state.margin = Math.min(200, state.margin + (state.margin >= 8 ? 4 : 2)); save(); draw(); });
-$("#resetClicks").addEventListener("click", () => { state.added = []; state.removed = []; save(); render(); });
+$("#zoomIn").addEventListener("click", () => { if (geo) zoomAt(1 / 1.4, geo.L + geo.P / 2, geo.T + geo.P / 2); });
+$("#zoomOut").addEventListener("click", () => { if (geo) zoomAt(1.4, geo.L + geo.P / 2, geo.T + geo.P / 2); });
+$("#fit").addEventListener("click", () => { fitView(); draw(); });
+$("#undo").addEventListener("click", undo);
+$("#resetEdits").addEventListener("click", () => { pushUndo(); cur().added = []; cur().removed = []; save(); render(); });
 $("#tabMod").addEventListener("click", () => { state.tab = "mod"; save(); render(); });
 $("#tabHoles").addEventListener("click", () => { state.tab = "holes"; save(); render(); });
 $("#copy").addEventListener("click", () => {
-  const text = $("#cfgOut").textContent, st = $("#copyStatus");
-  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("#cfgOut")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); st.textContent = "Selected. Press Ctrl+C to copy."; };
-  try { navigator.clipboard.writeText(text).then(() => { st.textContent = "Copied."; }, fallback); } catch (e) { fallback(); }
-  setTimeout(() => { st.textContent = ""; }, 4000);
+  const text = cfgText, st = $("#copyStatus");
+  const done = msg => { st.textContent = msg; copiedText = text; };
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("#cfgOut")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); done("Selected. Press Ctrl+C to copy."); };
+  try { navigator.clipboard.writeText(text).then(() => done("Copied."), fallback); } catch (e) { fallback(); }
 });
+$("#download").addEventListener("click", () => {
+  const cfg = buildConfig(last);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([cfg.text.replace(/\n/g, "\r\n")], { type: "text/plain" }));
+  a.download = cfg.file;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+});
+document.addEventListener("keydown", ev => {
+  if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && ev.key.toLowerCase() === "z") {
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "TEXTAREA" || tag === "INPUT") return;
+    ev.preventDefault(); undo();
+  }
+});
+
+// ---- Grid pointer: paint, erase, pan, zoom ----
 const cv = $("#grid");
-cv.addEventListener("mousemove", ev => { const t = tileAt(ev); const same = (t && hover && t.tx === hover.tx && t.tz === hover.tz) || (!t && !hover); if (!same) { hover = t; draw(); readout(); } });
-cv.addEventListener("mouseleave", () => { hover = null; draw(); readout(); });
-cv.addEventListener("click", ev => { const t = tileAt(ev); if (t) { hover = t; toggle(t); } });
+let drag = null;
+cv.addEventListener("contextmenu", ev => ev.preventDefault());
+cv.addEventListener("pointerdown", ev => {
+  const [mx, my] = localXY(ev);
+  const pan = state.tool === "pan" || ev.shiftKey || ev.button === 1 || ev.button === 2;
+  cv.setPointerCapture(ev.pointerId);
+  if (pan) { drag = { kind: "pan", x: mx, y: my }; cv.classList.add("dragging"); return; }
+  if (ev.button !== 0) return;
+  const t = tileAtXY(mx, my);
+  if (!t) return;
+  pushUndo();
+  const k = key(t.tx, t.tz);
+  drag = { kind: "paint", on: !last.finalKeys.has(k), lastKey: k };
+  setTile(k, drag.on); hover = t; save(); render();
+});
+cv.addEventListener("pointermove", ev => {
+  const [mx, my] = localXY(ev);
+  if (drag && drag.kind === "pan") {
+    view.cx -= (mx - drag.x) / geo.cell; view.cz += (my - drag.y) / geo.cell;
+    drag.x = mx; drag.y = my; clampView(); draw(); return;
+  }
+  const t = tileAtXY(mx, my);
+  if (drag && drag.kind === "paint" && t) {
+    const k = key(t.tx, t.tz);
+    if (k !== drag.lastKey) { drag.lastKey = k; setTile(k, drag.on); hover = t; save(); render(); return; }
+  }
+  const same = (t && hover && t.tx === hover.tx && t.tz === hover.tz) || (!t && !hover);
+  if (!same) { hover = t; draw(); readout(); }
+});
+const endDrag = () => { if (drag) { drag = null; cv.classList.remove("dragging"); render(); } };
+cv.addEventListener("pointerup", endDrag);
+cv.addEventListener("pointercancel", endDrag);
+cv.addEventListener("pointerleave", () => { if (!drag) { hover = null; draw(); readout(); } });
+cv.addEventListener("wheel", ev => { ev.preventDefault(); const [mx, my] = localXY(ev); zoomAt(Math.pow(1.0015, ev.deltaY), mx, my); }, { passive: false });
+cv.addEventListener("keydown", ev => {
+  const k = ev.key;
+  if (!hover) hover = { tx: Math.floor(view.cx), tz: Math.floor(view.cz) };
+  let used = true;
+  if (k === "ArrowLeft") hover.tx--; else if (k === "ArrowRight") hover.tx++;
+  else if (k === "ArrowUp") hover.tz++; else if (k === "ArrowDown") hover.tz--;
+  else if (k === " " || k === "Enter") { pushUndo(); const kk = key(hover.tx, hover.tz); setTile(kk, !last.finalKeys.has(kk)); save(); render(); }
+  else if (k === "+" || k === "=") zoomAt(1 / 1.4, geo.L + geo.P / 2, geo.T + geo.P / 2);
+  else if (k === "-" || k === "_") zoomAt(1.4, geo.L + geo.P / 2, geo.T + geo.P / 2);
+  else if (k === "f" || k === "F") fitView();
+  else used = false;
+  if (!used) return;
+  ev.preventDefault();
+  // Keep the keyboard cursor in view
+  const half = view.span / 2 - 1;
+  if (hover.tx < view.cx - half) view.cx = hover.tx + half; if (hover.tx + 1 > view.cx + half) view.cx = hover.tx + 1 - half;
+  if (hover.tz < view.cz - half) view.cz = hover.tz + half; if (hover.tz + 1 > view.cz + half) view.cz = hover.tz + 1 - half;
+  draw(); readout();
+});
+cv.addEventListener("blur", () => { if (!drag) { hover = null; draw(); readout(); } });
 new ResizeObserver(() => draw()).observe($("#gridwrap"));
 try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw()); } catch (e) {}
 new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

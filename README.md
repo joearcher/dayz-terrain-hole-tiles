@@ -2,7 +2,7 @@
 
 A single-page tool for DayZ modders that converts world positions into terrain hole tile coordinates and writes the `Holes` config for a mod.
 
-**Use it:** https://joearcher.github.io/dayz-terrain-hole-tiles/
+**Use it:** https://tiles.bgom.dev/
 
 ## What it does
 
@@ -34,9 +34,11 @@ The page:
 
 - reads positions as DayZ prints them (`X, Y, Z`), as `X Z` pairs, or as tiles typed directly. You can paste an existing `tiles[]` block back in;
 - adds the tile under each position, every tile within a radius, or every tile in the box between the positions;
-- shows the tiles on a north-up grid with the map's vanilla holes. Click a tile to add or remove it;
-- flags positions close to a tile edge, tiles that are already vanilla holes, and tiles outside the terrain;
-- writes either the `Holes` block alone or a complete mod `config.cpp`.
+- shows the tiles on a north-up grid with the map's vanilla holes and the edge of the terrain;
+- lets you paint tiles in or erase them by clicking or dragging. Scroll to zoom; pan with Move view, Shift-drag or right-drag; Fit, Undo (Ctrl+Z) and Reset edits. The keyboard works too: arrow keys, Space, + / − and F;
+- keeps separate positions and edits for each map, with an example to start from;
+- flags positions close to a tile edge, tiles that are already vanilla holes, tiles outside the terrain, and group names that would replace a vanilla group;
+- writes either the `Holes` block alone or a complete mod `config.cpp`, to copy or download.
 
 ## Grid sizes
 
