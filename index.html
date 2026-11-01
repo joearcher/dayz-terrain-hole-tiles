@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Convert DayZ world positions into terrain hole tile coordinates and build a Holes config for a mod.">
+<title>Terrain Hole Tiles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+:root { color-scheme: light; }
+[hidden] { display: none !important; }
+a { color: var(--point); }
+body { margin: 0; }
+/* Layout: survey workbench. Positions column beside a north-up tile grid; tile tables, config and checks run full width below. */
+:root {
+  --paper: #e8ecef;
+  --panel: #f8fafb;
+  --ink: #16202a;
+  --muted: #536270;
+  --line: #c8d1d9;
+  --gridline: #dce3e8;
+  --accent: #b5670f;
+  --accent-ink: #ffffff;
+  --accent-soft: #f4e4cf;
+  --void: #1b232b;
+  --hatch: #66768380;
+  --point: #1d6fb8;
+  --ok: #2b7a4a;
+  --warn: #8f5400;
+  --bad: #b03a2e;
+  --f-display: "Archivo Narrow", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f151a; --panel: #161f27; --ink: #e2e8ed; --muted: #94a2ae; --line: #2b3742; --gridline: #212c36;
+    --accent: #e39a3a; --accent-ink: #1b1206; --accent-soft: #3a2b15; --void: #030608; --hatch: #7d8c9966;
+    --point: #63aee8; --ok: #5cbf85; --warn: #e3a64c; --bad: #ef7a6d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f151a; --panel: #161f27; --ink: #e2e8ed; --muted: #94a2ae; --line: #2b3742; --gridline: #212c36;
+  --accent: #e39a3a; --accent-ink: #1b1206; --accent-soft: #3a2b15; --void: #030608; --hatch: #7d8c9966;
+  --point: #63aee8; --ok: #5cbf85; --warn: #e3a64c; --bad: #ef7a6d; color-scheme: dark;
+}
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+header { display: grid; gap: 14px; }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(30px, 4.2vw, 42px); line-height: 1.05; letter-spacing: .005em; margin: 0; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 66ch; margin: 6px 0 0; }
+.mapbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.mapbar label { font-family: var(--f-display); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; font-size: 13px; color: var(--muted); }
+select, input[type=text], input[type=number] { font: 500 14px var(--f-body); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; }
+input[type=number] { width: 6.5em; font-family: var(--f-mono); }
+input[type=text] { min-width: 0; }
+.chip { font-family: var(--f-mono); font-size: 13px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); white-space: nowrap; }
+.chip b { font-weight: 500; color: var(--accent); }
+.formula { font-family: var(--f-mono); font-size: 14px; padding: 8px 12px; background: var(--panel); border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0; overflow-x: auto; white-space: nowrap; }
+.mapnote { color: var(--muted); font-size: 13.5px; max-width: 80ch; margin: 0; }
+.custom { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 13.5px; }
+.custom label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); gap: 20px; align-items: start; }
+@media (max-width: 880px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.panel > * { min-width: 0; }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 15px; text-transform: uppercase; letter-spacing: .09em; margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+h2 .count { font-family: var(--f-mono); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); font-size: 13px; }
+h3 { font-family: var(--f-display); font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 6px 0 0; }
+.help { font-size: 13.5px; color: var(--muted); margin: 0; }
+.help code, td code, p code { font-family: var(--f-mono); font-size: .92em; }
+textarea { width: 100%; box-sizing: border-box; min-height: 200px; font: 13px/1.55 var(--f-mono); background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; flex-wrap: wrap; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label { padding: 6px 12px; font-size: 13.5px; font-weight: 500; cursor: pointer; border-right: 1px solid var(--line); background: var(--panel); }
+.seg label:last-of-type { border-right: 0; }
+.seg input:checked + label { background: var(--ink); color: var(--panel); }
+.seg input:focus-visible + label { outline: 2px solid var(--point); outline-offset: -2px; }
+.btn { font: 600 13px var(--f-body); border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+:focus-visible { outline: 2px solid var(--point); outline-offset: 2px; }
+.errors { margin: 0; padding: 8px 12px; border-radius: 4px; background: var(--accent-soft); color: var(--warn); font-size: 13.5px; }
+.gridwrap { position: relative; width: 100%; max-width: 640px; }
+canvas { display: block; width: 100%; aspect-ratio: 1 / 1; max-width: 100%; cursor: crosshair; touch-action: manipulation; border-radius: 4px; }
+.readout { font: 13px/1.5 var(--f-mono); min-height: 3em; color: var(--ink); }
+.readout .dim { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 2px; display: inline-block; border: 1px solid var(--line); }
+.sw.new { background: var(--accent); border-color: var(--accent); }
+.sw.van { background: repeating-linear-gradient(45deg, var(--void) 0 3px, var(--hatch) 3px 4px); }
+.sw.pt { border: 2px solid var(--point); border-radius: 50%; background: transparent; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th { text-align: left; font-family: var(--f-display); font-weight: 600; text-transform: uppercase; letter-spacing: .07em; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); padding: 6px 14px 6px 0; white-space: nowrap; }
+td { padding: 6px 14px 6px 0; border-bottom: 1px solid var(--gridline); vertical-align: top; font-variant-numeric: tabular-nums; }
+td.mono, .mono { font-family: var(--f-mono); font-size: 13px; white-space: nowrap; }
+td.note { color: var(--muted); min-width: 16ch; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.new { background: var(--accent-soft); color: var(--warn); }
+.pill.van { background: var(--void); color: #d9e1e7; }
+.pill.out { background: var(--bad); color: #fff; }
+.pill.ok { color: var(--ok); border: 1px solid var(--ok); }
+.pill.fail { color: var(--bad); border: 1px solid var(--bad); }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.tabs button { font: 600 13.5px var(--f-body); background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 14px 7px; cursor: pointer; }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; overflow: auto; max-height: 460px; tab-size: 4; margin: 0; white-space: pre; }
+.names { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; }
+.names label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13.5px; }
+.status { font-size: 13px; color: var(--ok); min-height: 1.4em; }
+.foot { color: var(--muted); font-size: 13px; max-width: 90ch; display: grid; gap: 6px; }
+.foot p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Terrain Hole Tiles</h1>
+      <p class="lede">Convert DayZ world positions into heightmap tile coordinates for a world's <code>Holes</code> config. Paste positions from the game or an editor, then click tiles on the grid to add or remove them, and copy the finished config.</p>
+    </div>
+    <div class="mapbar">
+      <label for="map">Map</label>
+      <select id="map">
+        <option value="nasdara">Nasdara</option>
+        <option value="sakhal">Sakhal</option>
+        <option value="enoch">Livonia (Enoch)</option>
+        <option value="chernarusplus">Chernarus</option>
+        <option value="custom">Custom terrain</option>
+      </select>
+      <span class="chip" id="chipGrid"></span>
+      <span class="chip" id="chipTiles"></span>
+      <span class="chip" id="chipWorld"></span>
+    </div>
+    <div class="custom" id="customBox" hidden>
+      <label>Grid size (m) <input type="number" id="cGrid" step="0.01" min="0.1"></label>
+      <label>World size (m) <input type="number" id="cWorld" step="1" min="1"></label>
+      <label>World class <input type="text" id="cCls" size="12"></label>
+      <label>Parent <input type="text" id="cParent" size="10"></label>
+      <label>World patch <input type="text" id="cPatch" size="18"></label>
+    </div>
+    <div class="formula" id="formula"></div>
+    <p class="mapnote" id="mapNote"></p>
+  </header>
+
+  <div class="bench">
+    <section class="panel" aria-labelledby="hPos">
+      <h2 id="hPos">Positions</h2>
+      <p class="help">One per line. <code>X, Y, Z</code> as DayZ prints it (height in the middle is ignored), <code>X Z</code> pairs, or tiles typed directly as <code>{ 1417, 3415 }</code>. Text after <code>#</code> is a label. Lines without numbers, such as <code>class</code> or <code>tiles[] =</code>, are skipped, so you can paste an existing <code>tiles[]</code> block back in.</p>
+      <textarea id="pos" spellcheck="false" aria-label="Positions"></textarea>
+      <p class="errors" id="errors" hidden></p>
+      <div class="row" role="radiogroup" aria-label="Tiles from each position">
+        <span class="help">Tiles from positions:</span>
+        <span class="seg">
+          <input type="radio" name="mode" id="mPoint" value="point"><label for="mPoint">Tile under each</label>
+          <input type="radio" name="mode" id="mRadius" value="radius"><label for="mRadius">Within radius</label>
+          <input type="radio" name="mode" id="mBox" value="box"><label for="mBox">Fill the box</label>
+        </span>
+      </div>
+      <div class="row" id="radiusRow" hidden>
+        <label class="help" for="radius">Radius around each position (m)</label>
+        <input type="number" id="radius" min="0" step="0.5">
+      </div>
+      <p class="help" id="modeHelp"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="hGrid">
+      <h2 id="hGrid">Tile grid <span class="count">north up</span></h2>
+      <div class="gridwrap" id="gridwrap"><canvas id="grid" aria-label="Tile grid around the selected tiles. Click a tile to add or remove it."></canvas></div>
+      <div class="readout" id="readout"></div>
+      <div class="legend">
+        <span><i class="sw new"></i>Hole tiles you're adding</span>
+        <span><i class="sw van"></i>Already a hole in vanilla</span>
+        <span><i class="sw pt"></i>Your positions</span>
+      </div>
+      <div class="row">
+        <button class="btn" id="zoomIn" type="button">Zoom in</button>
+        <button class="btn" id="zoomOut" type="button">Zoom out</button>
+        <button class="btn" id="resetClicks" type="button">Undo clicks</button>
+        <span class="help" id="clickInfo"></span>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="hTiles">
+    <h2 id="hTiles">Tiles <span class="count" id="tileCount"></span></h2>
+    <h3>Positions</h3>
+    <div class="tablewrap"><table id="ptTable"></table></div>
+    <h3>Tiles for the config</h3>
+    <div class="tablewrap"><table id="tileTable"></table></div>
+  </section>
+
+  <section class="panel" aria-labelledby="hCfg">
+    <h2 id="hCfg">Config</h2>
+    <div class="names">
+      <label>Holes group name<input type="text" id="group"></label>
+      <label>Mod patch name (CfgPatches)<input type="text" id="patch"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="skipVan"> Leave out tiles that are already vanilla holes</label>
+    <p class="errors" id="groupWarn" hidden></p>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tabMod" aria-selected="true">Mod config.cpp</button>
+      <button type="button" role="tab" id="tabHoles" aria-selected="false">Holes block only</button>
+    </div>
+    <pre class="config" id="cfgOut"></pre>
+    <div class="row"><button class="btn primary" id="copy" type="button">Copy config</button><span class="status" id="copyStatus" role="status"></span></div>
+  </section>
+
+  <section class="panel" aria-labelledby="hChk">
+    <h2 id="hChk">Checks</h2>
+    <p class="help">Each row runs the same conversion as above against a known answer: the BI wiki's table, and hole edges measured with <code>SurfaceIsHole</code> on a 1.30 Nasdara server.</p>
+    <div class="tablewrap"><table id="chkTable"></table></div>
+  </section>
+
+  <div class="foot">
+    <p>Source and notes: <a href="https://github.com/joearcher/dayz-terrain-hole-tiles">github.com/joearcher/dayz-terrain-hole-tiles</a>. Not affiliated with Bohemia Interactive.</p>
+    <p><b>How the tiles work.</b> A tile is one heightmap cell. Its index is the world coordinate divided by the terrain's grid size, rounded down, counted from the south-west corner: X first, then Z (north). Tile {x, z} covers x·g to (x+1)·g and z·g to (z+1)·g metres.</p>
+    <p><b>Nasdara status.</b> The 4 m grid, the vanilla hole list and the config merge were measured on a dedicated server (1.30). A mod's <code>Holes</code> group was added alongside the vanilla groups, <code>SurfaceIsHole</code> reported exactly the new tiles as holes, and the hole has since been checked in game. Load the mod on clients too, since the hole has to exist in their terrain as well.</p>
+  </div>
+</div>
+
+<script>
+const NASDARA_HOLES = "2354,842;1678,994;1679,994;1680,994;1678,995;1679,995;1680,995;2684,1005;1803,1048;2669,1051;2670,1051;2670,1052;2671,1052;2672,1052;2670,1053;2671,1053;2672,1053;2671,1054;2522,1061;2353,1074;2648,1074;2649,1074;2650,1074;2353,1075;2647,1075;2648,1075;2649,1075;2650,1075;2352,1076;2353,1076;2648,1076;2649,1076;2650,1076;2651,1076;2352,1077;2649,1077;2650,1077;2352,1078;2394,1081;2351,1082;2394,1082;2349,1083;2350,1083;2351,1083;2394,1083;2349,1084;2394,1084;2349,1085;2394,1085;2394,1089;2394,1090;2394,1091;2394,1092;2354,1098;3780,1135;2134,1197;2245,1204;2208,1281;982,1306;983,1306;2408,1359;2409,1359;2410,1359;2408,1360;2409,1360;2410,1360;1350,1386;1351,1386;1349,1387;1350,1387;1351,1387;1349,1388;1350,1388;1349,1389;1349,1390;1345,1393;1346,1393;1344,1394;1345,1394;1346,1394;1344,1395;1345,1395;1344,1396;1435,1408;1436,1408;1435,1409;1436,1409;1435,1410;1436,1410;1437,1410;1435,1411;1436,1411;1437,1411;1435,1412;1436,1412;1437,1412;1435,1413;1436,1413;1435,1414;1436,1414;1435,1415;1436,1415;1435,1416;1436,1416;1435,1417;1436,1417;1435,1418;1436,1418;1437,1418;1435,1419;1436,1419;1437,1419;1159,1420;1435,1420;1436,1420;1437,1420;1938,1420;1436,1421;1437,1421;1436,1422;1437,1422;1802,1427;1605,1431;1924,1432;1909,1445;2639,1535;715,1595;716,1595;715,1596;716,1596;715,1597;716,1597;1966,1703;1727,1727;911,1769;1691,1830;1639,1840;1640,1840;1639,1841;1640,1841;1639,1842;1640,1842;1845,1847;1662,1871;2185,1889;2186,1889;2187,1889;1684,1890;2185,1890;2186,1890;2187,1890;1695,1914;1656,1947;2740,1947;1965,1990;2605,2012;1595,2015;1578,2038;1579,2038;1548,2051;1524,2068;1453,2099;1476,2123;1380,2153;1423,2155;1397,2157;1398,2157;1397,2158;1398,2158;1311,2174;1909,2187;1162,2192;1226,2192;2224,2238;1429,2242;1430,2242;1429,2243;1430,2243;1429,2244;1430,2244;2213,2251;2182,2265;772,2299;773,2299;774,2299;772,2300;773,2300;774,2300;767,2307;768,2307;769,2307;770,2307;767,2308;768,2308;769,2308;770,2308;741,2313;742,2313;743,2313;744,2313;741,2314;742,2314;743,2314;744,2314;2119,2318;2171,2318;2119,2319;2070,2326;2070,2327;1035,2343;2017,2359;2098,2359;1976,2373;1961,2381;1962,2381;2067,2388;2264,2397;1956,2416;2799,2416;1956,2417;965,2443;966,2443;967,2443;965,2444;966,2444;967,2444;626,2455;627,2455;628,2455;629,2455;626,2456;627,2456;628,2456;629,2456;611,2471;2059,2478;2296,2490;639,2496;640,2496;639,2497;640,2497;639,2498;640,2498;3673,2509;3674,2509;3673,2510;3674,2510;679,2516;680,2516;681,2516;682,2516;679,2517;680,2517;681,2517;682,2517;2306,2525;2554,2532;2555,2532;697,2536;698,2536;699,2536;700,2536;697,2537;698,2537;699,2537;700,2537;2028,2546;2029,2546;665,2550;2537,2554;2537,2555;673,2557;674,2557;673,2558;674,2558;677,2558;678,2558;673,2559;677,2559;678,2559;676,2560;677,2560;756,2568;2298,2571;2298,2572;2508,2585;774,2608;2313,2613;2609,2616;2610,2616;2609,2617;2610,2617;2613,2617;2614,2617;2609,2618;2610,2618;2613,2618;2614,2618;2610,2619;2614,2619;2356,2622;1700,2627;2422,2633;2423,2633;1945,2637;2539,2637;2950,2639;2950,2640;2453,2642;1419,2647;2327,2650;1882,2664;1883,2664;1835,2670;816,2672;2343,2676;850,2678;1783,2678;877,2679;1531,2679;2524,2683;971,2687;1498,2687;911,2688;1384,2697;1385,2697;1680,2697;1147,2722;1345,2725;1089,2729;1319,2737;1163,2741;2873,2757;1213,2760;1213,2761;1193,2764;1208,2793;1201,2815;2326,2816;868,2819;3079,2831;3080,2831;3078,2832;3079,2832;3080,2832;3081,2832;3077,2833;3078,2833;3079,2833;3080,2833;3081,2833;3076,2834;3077,2834;3078,2834;3079,2834;3080,2834;3081,2834;3075,2835;3076,2835;3077,2835;3078,2835;3079,2835;3080,2835;3081,2835;3074,2836;3075,2836;3076,2836;3077,2836;3078,2836;3079,2836;3080,2836;3064,2837;3065,2837;3066,2837;3074,2837;3075,2837;3076,2837;3077,2837;3078,2837;3079,2837;3064,2838;3065,2838;3066,2838;3067,2838;3068,2838;3074,2838;3075,2838;3076,2838;3077,2838;3078,2838;3063,2839;3064,2839;3065,2839;3066,2839;3067,2839;3068,2839;3069,2839;3075,2839;3076,2839;3063,2840;3064,2840;3065,2840;3066,2840;3067,2840;3068,2840;3069,2840;3070,2840;3071,2840;3062,2841;3063,2841;3064,2841;3065,2841;3066,2841;3067,2841;3068,2841;3069,2841;3070,2841;3071,2841;3072,2841;3061,2842;3062,2842;3063,2842;3064,2842;3065,2842;3066,2842;3067,2842;3068,2842;3069,2842;3070,2842;3071,2842;3072,2842;3061,2843;3062,2843;3063,2843;3064,2843;3065,2843;3066,2843;3068,2843;3069,2843;3070,2843;3071,2843;3061,2844;3062,2844;3063,2844;3064,2844;3065,2844;3066,2844;3067,2844;3068,2844;3069,2844;3070,2844;3062,2845;3063,2845;3064,2845;3065,2845;3066,2845;3067,2845;3068,2845;3069,2845;3063,2846;3064,2846;3065,2846;3066,2846;3067,2846;3068,2846;3069,2846;3065,2847;3066,2847;3067,2847;3068,2847;3069,2847;3066,2848;3067,2848;3068,2848;868,2851;1167,2858;2109,2862;875,2876;1146,2882;2373,2899;902,2906;1112,2908;2729,2910;870,2916;870,2917;2410,2917;823,2926;2426,2927;2782,2938;1077,2939;2811,2949;2812,2949;2842,2961;1028,2971;1536,2972;2293,2985;991,3009;2824,3027;2512,3040;2978,3042;978,3062;2511,3062;3073,3082;3104,3093;2507,3095;1974,3097;1974,3098;1904,3104;2495,3115;971,3123;2959,3123;3156,3126;1915,3143;952,3153;3078,3154;3057,3170;3057,3171;2522,3178;3165,3178;2536,3182;2156,3184;3090,3189;936,3192;3187,3206;923,3211;923,3212;2559,3213;2168,3219;1656,3221;3267,3226;898,3228;899,3228;810,3245;2197,3267;3292,3315;1460,3378;1417,3415;2674,3463;2699,3478;2724,3513;2752,3536;3330,3558;3331,3558;3332,3558;3330,3559;3331,3559;3332,3559;3333,3559;3331,3560;3332,3560;726,3947;727,3947;728,3947;729,3947;730,3947;713,3955";
+const NASDARA_GROUPS = ["15_airfield_hq","15_airfield_rg","25_dnepr","30_rocketbase","35_desert","40_northwestfarmland_rg","45_shapur_rg","55_northernoilfields_rg","65_northernoilfields_rg","105_riverfarmland_rg1","105_riverfarmland_rg2","115_palace_rg","125_easternfarmlandlow","130_rockfacecity_rg","145_southervalleyvillage_rg","150_crater_rg","155_southernfarmland_rg","165_southernnasdarasuburbs","170_westernfarmland1_rg","180_mountainvillages_rg","190_bordervillages","200_bordercrossing","210_bordergate","220_centralfarmland_rg1","220_centralfarmland_rg2","230_provinggrounds_rg","240_centralcity_rg","85_nasdara2","185_lake","60_kirovdam","95_nasdarasuburbs","wells","Irrigation_Tunnels"];
+
+function holeSet(list) {
+  if (!list) return null;
+  const s = new Set();
+  for (const p of list) s.add(p[0] + "," + p[1]);
+  return s;
+}
+const MAPS = {
+  nasdara: { name: "Nasdara", grid: 4, world: 16384, cls: "nasdara", parent: "CAWorld", patch: "DZ_Worlds_Nasdara",
+    holes: holeSet(NASDARA_HOLES.split(";").filter(Boolean).map(p => p.split(",").map(Number))), groups: NASDARA_GROUPS,
+    note: "Grid size measured on a 1.30 server: the terrain's slope breaks and every hole edge fall on 4 m lines. The hatched tiles are all 556 vanilla hole tiles found by scanning the whole map with SurfaceIsHole. Nasdara's own config has 33 Holes groups." },
+  sakhal: { name: "Sakhal", grid: 3.75, world: 15360, cls: "Sakhal", parent: "CAWorld", patch: "DZ_Worlds_Sakhal",
+    holes: null, groups: [],
+    note: "Grid size from the BI wiki table. Sakhal's vanilla holes aren't known here (its world config is encrypted), and its parent class wasn't checked." },
+  enoch: { name: "Livonia", grid: 6.25, world: 12800, cls: "Enoch", parent: "CAWorld", patch: "DZ_Worlds_Enoch",
+    holes: holeSet([[118,195],[118,196],[118,197],[94,180],[95,180],[94,181],[95,181]]), groups: ["Dambog"],
+    note: "Grid size from the BI wiki table. The vanilla Dambog group (7 tiles) lines up with the bunker's two entrance triggers at this size." },
+  chernarusplus: { name: "Chernarus", grid: 7.5, world: 15360, cls: "ChernarusPlus", parent: "CAWorld", patch: "DZ_Worlds_Chernarusplus_World",
+    holes: holeSet([]), groups: [],
+    note: "Grid size from the BI wiki table. Vanilla Chernarus has no Holes class." },
+  custom: { name: "Custom", custom: true, holes: null, groups: [],
+    note: "Enter the terrain's grid size (world size divided by heightmap resolution) and its CfgWorlds class. Buldozer shows the tile under the cursor as Tile = (x, y) if you want to double-check." }
+};
+
+const SAMPLE = [
+  "# Examples near an irrigation shaft north of Nasdara. Replace with your own.",
+  "5670.22, 276.72, 13661.87  # TXS_0003 shaft (already a hole)",
+  "5690.11, 267.39, 13645.47  # opening over the tunnel",
+  "<5699.8, 266.1, 13640.2>   # second opening",
+  "{ 1425, 3410 }             # a tile typed directly"
+].join("\n");
+
+const DEFAULTS = { map: "nasdara", text: SAMPLE, mode: "point", radius: 3, margin: 4, group: "ZERO_MyHoles", patch: "ZERO_TerrainHoles", skipVan: true, tab: "mod",
+  added: [], removed: [], custom: { grid: 4, world: 16384, cls: "MyWorld", parent: "CAWorld", patch: "" } };
+const KEY = "terrain-hole-tiles.v1";
+let state = JSON.parse(JSON.stringify(DEFAULTS));
+try {
+  const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+  if (saved && typeof saved === "object") state = Object.assign(state, saved, { custom: Object.assign({}, DEFAULTS.custom, saved.custom || {}) });
+} catch (e) {}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const key = (x, z) => x + "," + z;
+const fmt = (v, d = 2) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d).replace(/\.?0+$/, "") || "0";
+const fm = v => { const s = (Math.round(v * 1000) / 1000).toString(); return s; };
+
+function getMap() {
+  const m = MAPS[state.map] || MAPS.nasdara;
+  if (!m.custom) return m;
+  const c = state.custom;
+  return Object.assign({}, m, { grid: +c.grid > 0 ? +c.grid : 4, world: +c.world > 0 ? +c.world : 16384, cls: c.cls || "MyWorld", parent: c.parent || "CAWorld", patch: c.patch || "" });
+}
+function tileOf(v, g) { return Math.floor(v / g + 1e-9); }
+
+function parse(text) {
+  const points = [], tiles = [], errors = [];
+  text.split(/\r?\n/).forEach((raw, i) => {
+    let line = raw, label = "";
+    const lm = line.match(/(#|\/\/)(.*)$/);
+    if (lm) { label = lm[2].trim(); line = line.slice(0, lm.index); }
+    if (!/\d/.test(line)) return;
+    const pairRe = /\{\s*(-?\d+)\s*,\s*(-?\d+)\s*\}/g;
+    const pairs = [...line.matchAll(pairRe)];
+    if (pairs.length && !/\d/.test(line.replace(pairRe, ""))) {
+      for (const p of pairs) tiles.push({ tx: +p[1], tz: +p[2], label, line: i + 1 });
+      return;
+    }
+    const nums = (line.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    if (nums.length < 2) { errors.push("Line " + (i + 1) + " needs both X and Z: " + raw.trim()); return; }
+    const x = nums[0], z = nums.length >= 3 ? nums[2] : nums[1];
+    points.push({ x, z, y: nums.length >= 3 ? nums[1] : null, label, line: i + 1 });
+  });
+  return { points, tiles, errors };
+}
+
+function compute() {
+  const m = getMap(), g = m.grid, max = Math.round(m.world / g);
+  const { points, tiles, errors } = parse(state.text);
+  const found = new Map();
+  const addTile = (tx, tz, src) => { const k = key(tx, tz); if (!found.has(k)) found.set(k, { tx, tz, src: new Set() }); found.get(k).src.add(src); };
+  const r = Math.max(0, +state.radius || 0);
+  points.forEach((p, i) => {
+    p.tx = tileOf(p.x, g); p.tz = tileOf(p.z, g);
+    p.name = p.label || ("line " + p.line);
+    p.ox = p.x - p.tx * g; p.oz = p.z - p.tz * g;
+    const near = [];
+    const lim = 0.5;
+    if (p.ox < lim) near.push(["west", p.ox, p.tx - 1, p.tz]);
+    if (g - p.ox < lim) near.push(["east", g - p.ox, p.tx + 1, p.tz]);
+    if (p.oz < lim) near.push(["south", p.oz, p.tx, p.tz - 1]);
+    if (g - p.oz < lim) near.push(["north", g - p.oz, p.tx, p.tz + 1]);
+    p.near = near;
+    if (state.mode === "radius" && r > 0) {
+      for (let tx = tileOf(p.x - r, g); tx <= tileOf(p.x + r, g); tx++) {
+        for (let tz = tileOf(p.z - r, g); tz <= tileOf(p.z + r, g); tz++) {
+          const dx = Math.max(tx * g - p.x, 0, p.x - (tx + 1) * g);
+          const dz = Math.max(tz * g - p.z, 0, p.z - (tz + 1) * g);
+          if (dx * dx + dz * dz < r * r) addTile(tx, tz, p.name);
+        }
+      }
+    } else if (state.mode !== "box") {
+      addTile(p.tx, p.tz, p.name);
+    }
+  });
+  let box = null;
+  if (state.mode === "box" && points.length) {
+    const xs = points.map(p => p.x), zs = points.map(p => p.z);
+    box = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+    const tx0 = tileOf(box.x0, g), tz0 = tileOf(box.z0, g);
+    const tx1 = Math.max(tx0, Math.ceil(box.x1 / g - 1e-9) - 1), tz1 = Math.max(tz0, Math.ceil(box.z1 / g - 1e-9) - 1);
+    if ((tx1 - tx0 + 1) * (tz1 - tz0 + 1) > 20000) errors.push("The box spans more than 20,000 tiles. Check the positions.");
+    else for (let tx = tx0; tx <= tx1; tx++) for (let tz = tz0; tz <= tz1; tz++) addTile(tx, tz, "box");
+  }
+  tiles.forEach(t => addTile(t.tx, t.tz, t.label ? "typed: " + t.label : "typed (line " + t.line + ")"));
+  const added = new Set(state.added), removed = new Set(state.removed);
+  for (const k of added) { if (!found.has(k)) { const [tx, tz] = k.split(",").map(Number); found.set(k, { tx, tz, src: new Set(["clicked"]) }); } }
+  const final = [];
+  for (const [k, t] of found) {
+    if (removed.has(k)) continue;
+    t.vanilla = m.holes ? m.holes.has(k) : null;
+    t.outside = t.tx < 0 || t.tz < 0 || t.tx >= max || t.tz >= max;
+    final.push(t);
+  }
+  final.sort((a, b) => a.tx - b.tx || a.tz - b.tz);
+  return { m, g, max, points, tiles, errors, final, box, r };
+}
+
+let C = {}, view = null, hover = null, last = null;
+
+function colors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  return { panel: v("--panel"), paper: v("--paper"), ink: v("--ink"), muted: v("--muted"), line: v("--line"), grid: v("--gridline"),
+    accent: v("--accent"), void: v("--void"), hatch: v("--hatch"), point: v("--point"), bad: v("--bad"), mono: v("--f-mono") };
+}
+
+function computeView(res) {
+  const xs = [], zs = [];
+  res.final.forEach(t => { xs.push(t.tx); zs.push(t.tz); });
+  res.points.forEach(p => { xs.push(p.tx); zs.push(p.tz); });
+  let cx, cz, span;
+  if (!xs.length) { cx = res.max / 2; cz = res.max / 2; span = 16; }
+  else {
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    cx = (x0 + x1 + 1) / 2; cz = (z0 + z1 + 1) / 2;
+    span = Math.max(x1 - x0 + 1, z1 - z0 + 1);
+  }
+  span = Math.min(600, Math.max(6, Math.round(span + 2 * state.margin)));
+  return { x0: Math.round(cx - span / 2), z0: Math.round(cz - span / 2), span };
+}
+
+function draw() {
+  if (!last) return;
+  const res = last, cv = $("#grid");
+  const W = Math.max(220, Math.round(cv.getBoundingClientRect().width)), H = W;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  C = colors();
+  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
+  const L = 44, B = 26, T = 8, R = 8;
+  const P = Math.min(W - L - R, H - T - B);
+  view = computeView(res);
+  const cell = P / view.span;
+  view.cell = cell; view.L = L; view.T = T; view.P = P;
+  const px = tx => L + (tx - view.x0) * cell;
+  const py = tz => T + P - (tz - view.z0 + 1) * cell;
+  ctx.fillStyle = C.panel; ctx.fillRect(L, T, P, P);
+  ctx.save(); ctx.beginPath(); ctx.rect(L, T, P, P); ctx.clip();
+
+  // Vanilla holes, hatched
+  if (res.m.holes) {
+    const pc = document.createElement("canvas"); pc.width = pc.height = 8;
+    const p2 = pc.getContext("2d"); p2.fillStyle = C.void; p2.fillRect(0, 0, 8, 8);
+    p2.strokeStyle = C.hatch; p2.lineWidth = 1.5; p2.beginPath(); p2.moveTo(-2, 10); p2.lineTo(10, -2); p2.moveTo(-2, 2); p2.lineTo(2, -2); p2.moveTo(6, 10); p2.lineTo(10, 6); p2.stroke();
+    ctx.fillStyle = ctx.createPattern(pc, "repeat");
+    for (const k of res.m.holes) {
+      const [tx, tz] = k.split(",").map(Number);
+      if (tx < view.x0 || tz < view.z0 || tx >= view.x0 + view.span || tz >= view.z0 + view.span) continue;
+      ctx.fillRect(px(tx), py(tz), cell, cell);
+    }
+  }
+  // Selected tiles
+  for (const t of res.final) {
+    ctx.fillStyle = C.accent; ctx.globalAlpha = t.vanilla ? 0.55 : 0.9;
+    ctx.fillRect(px(t.tx) + 0.5, py(t.tz) + 0.5, cell - 1, cell - 1);
+    ctx.globalAlpha = 1;
+    if (t.vanilla) { ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.strokeRect(px(t.tx) + 1, py(t.tz) + 1, cell - 2, cell - 2); }
+  }
+  // Grid lines
+  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+  const lstep = steps.find(s => s * cell >= 36) || 1000;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= view.span; i++) {
+    const tx = view.x0 + i, tz = view.z0 + i;
+    const xMajor = tx % lstep === 0, zMajor = tz % lstep === 0;
+    if (cell >= 5 || xMajor) { ctx.strokeStyle = xMajor ? C.line : C.grid; ctx.beginPath(); ctx.moveTo(Math.round(L + i * cell) + 0.5, T); ctx.lineTo(Math.round(L + i * cell) + 0.5, T + P); ctx.stroke(); }
+    if (cell >= 5 || zMajor) { ctx.strokeStyle = zMajor ? C.line : C.grid; ctx.beginPath(); ctx.moveTo(L, Math.round(T + P - i * cell) + 0.5); ctx.lineTo(L + P, Math.round(T + P - i * cell) + 0.5); ctx.stroke(); }
+  }
+  // Box and radius outlines, then positions
+  const wx = x => L + (x / res.g - view.x0) * cell, wz = z => T + P - (z / res.g - view.z0) * cell;
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = C.point; ctx.lineWidth = 1.5;
+  if (res.box) ctx.strokeRect(wx(res.box.x0), wz(res.box.z1), (res.box.x1 - res.box.x0) / res.g * cell, (res.box.z1 - res.box.z0) / res.g * cell);
+  if (state.mode === "radius" && res.r > 0) res.points.forEach(p => { ctx.beginPath(); ctx.arc(wx(p.x), wz(p.z), res.r / res.g * cell, 0, Math.PI * 2); ctx.stroke(); });
+  ctx.setLineDash([]);
+  res.points.forEach(p => {
+    const x = wx(p.x), y = wz(p.z);
+    ctx.strokeStyle = C.panel; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = C.point; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 9, y); ctx.lineTo(x - 3, y); ctx.moveTo(x + 3, y); ctx.lineTo(x + 9, y); ctx.moveTo(x, y - 9); ctx.lineTo(x, y - 3); ctx.moveTo(x, y + 3); ctx.lineTo(x, y + 9); ctx.stroke();
+  });
+  // Hover outline
+  if (hover) { ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.strokeRect(px(hover.tx) + 1, py(hover.tz) + 1, cell - 2, cell - 2); }
+  ctx.restore();
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.strokeRect(L + 0.5, T + 0.5, P - 1, P - 1);
+
+  // Axis labels (tile indices)
+  ctx.fillStyle = C.muted; ctx.font = "11px " + (C.mono || "monospace");
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let i = 0; i <= view.span; i++) {
+    const tx = view.x0 + i;
+    if (tx % lstep === 0) { const x = L + (i + 0.5) * cell; if (x > L && x < L + P) ctx.fillText(String(tx), x, T + P + 6); }
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let i = 0; i <= view.span; i++) {
+    const tz = view.z0 + i;
+    if (tz % lstep === 0) { const y = T + P - (i + 0.5) * cell; if (y > T && y < T + P) ctx.fillText(String(tz), L - 6, y); }
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillStyle = C.muted; ctx.font = "600 12px " + (C.mono || "monospace");
+  ctx.fillText("N ↑", L + P - 6, T + 6);
+}
+
+function tileAt(ev) {
+  if (!view) return null;
+  const rc = $("#grid").getBoundingClientRect();
+  const mx = ev.clientX - rc.left, my = ev.clientY - rc.top;
+  if (mx < view.L || my < view.T || mx >= view.L + view.P || my >= view.T + view.P) return null;
+  return { tx: view.x0 + Math.floor((mx - view.L) / view.cell), tz: view.z0 + Math.floor((view.T + view.P - my) / view.cell) };
+}
+
+function readout() {
+  const el = $("#readout");
+  if (!last) return;
+  if (!hover) { el.innerHTML = '<span class="dim">Point at a tile to see its world bounds. Click it to add or remove it.</span>'; return; }
+  const g = last.g, k = key(hover.tx, hover.tz);
+  const sel = last.final.some(t => t.tx === hover.tx && t.tz === hover.tz);
+  const van = last.m.holes ? last.m.holes.has(k) : null;
+  let status = sel ? "in your list" : "not in your list";
+  if (van) status += " · already a vanilla hole";
+  el.innerHTML = "{ " + hover.tx + ", " + hover.tz + " } &nbsp; x " + fm(hover.tx * g) + "–" + fm((hover.tx + 1) * g) + " &nbsp; z " + fm(hover.tz * g) + "–" + fm((hover.tz + 1) * g) +
+    '<br><span class="dim">' + status + "</span>";
+}
+
+function toggle(t) {
+  const k = key(t.tx, t.tz);
+  const inFinal = last.final.some(f => f.tx === t.tx && f.tz === t.tz);
+  const added = new Set(state.added), removed = new Set(state.removed);
+  if (inFinal) { if (added.has(k)) added.delete(k); else removed.add(k); }
+  else { if (removed.has(k)) removed.delete(k); else added.add(k); }
+  state.added = [...added]; state.removed = [...removed];
+  save(); render();
+}
+
+function buildConfig(res) {
+  const tiles = res.final.filter(t => !(state.skipVan && t.vanilla) && !t.outside);
+  const group = (state.group || "ZERO_MyHoles").replace(/[^A-Za-z0-9_]/g, "_");
+  const patch = (state.patch || "ZERO_TerrainHoles").replace(/[^A-Za-z0-9_]/g, "_");
+  const lines = tiles.map((t, i) => "{ " + t.tx + ", " + t.tz + " }" + (i < tiles.length - 1 ? "," : ""));
+  const block = ind => {
+    const I = "\t".repeat(ind);
+    if (!lines.length) return I + "class " + group + "\n" + I + "{\n" + I + "\t// No tiles yet\n" + I + "\ttiles[] = {};\n" + I + "};";
+    return I + "class " + group + "\n" + I + "{\n" + I + "\ttiles[] =\n" + I + "\t{\n" + lines.map(l => I + "\t\t" + l).join("\n") + "\n" + I + "\t};\n" + I + "};";
+  };
+  const holes = "class Holes\n{\n" + block(1) + "\n};";
+  const req = ['"DZ_Data"'];
+  if (res.m.patch) req.push('"' + res.m.patch + '"');
+  const mod = "class CfgPatches\n{\n\tclass " + patch + "\n\t{\n\t\tunits[] = {};\n\t\tweapons[] = {};\n\t\trequiredVersion = 0.1;\n\t\trequiredAddons[] = { " + req.join(", ") + " };\n\t};\n};\n\n" +
+    "class CfgWorlds\n{\n\tclass " + res.m.parent + ";\n\tclass " + res.m.cls + ": " + res.m.parent + "\n\t{\n\t\tclass Holes\n\t\t{\n" + block(3) + "\n\t\t};\n\t};\n};";
+  return { text: state.tab === "holes" ? holes : mod, count: tiles.length, group };
+}
+
+function renderTables(res) {
+  const g = res.g;
+  const pt = $("#ptTable");
+  if (!res.points.length) pt.innerHTML = '<tr><td class="note">No positions yet. Paste some into the box above.</td></tr>';
+  else pt.innerHTML = "<tr><th>Position</th><th>X</th><th>Z</th><th>Tile</th><th>Inside tile</th><th>Notes</th></tr>" + res.points.map(p => {
+    const notes = [];
+    p.near.forEach(n => notes.push(fmt(n[1]) + " m from the " + n[0] + " edge; the opening may also need { " + n[2] + ", " + n[3] + " }"));
+    if (res.m.holes && res.m.holes.has(key(p.tx, p.tz))) notes.push("this tile is already a vanilla hole");
+    if (p.tx < 0 || p.tz < 0 || p.tx >= res.max || p.tz >= res.max) notes.push("outside the terrain");
+    return "<tr><td>" + esc(p.name) + '</td><td class="mono">' + fm(p.x) + '</td><td class="mono">' + fm(p.z) + '</td><td class="mono">{ ' + p.tx + ", " + p.tz + ' }</td><td class="mono">' + fmt(p.ox) + ", " + fmt(p.oz) + ' m</td><td class="note">' + (notes.length ? esc(notes.join("; ")) : "") + "</td></tr>";
+  }).join("");
+  const tt = $("#tileTable");
+  if (!res.final.length) tt.innerHTML = '<tr><td class="note">No tiles selected.</td></tr>';
+  else tt.innerHTML = "<tr><th>Tile</th><th>X range (m)</th><th>Z range (m)</th><th>Centre</th><th>Status</th><th>From</th></tr>" + res.final.map(t => {
+    let pill = '<span class="pill new">new hole</span>';
+    if (t.outside) pill = '<span class="pill out">outside terrain</span>';
+    else if (t.vanilla) pill = '<span class="pill van">vanilla hole</span>';
+    else if (t.vanilla === null) pill = '<span class="pill new">new (vanilla unknown)</span>';
+    return '<tr><td class="mono">{ ' + t.tx + ", " + t.tz + ' }</td><td class="mono">' + fm(t.tx * g) + " – " + fm((t.tx + 1) * g) + '</td><td class="mono">' + fm(t.tz * g) + " – " + fm((t.tz + 1) * g) +
+      '</td><td class="mono">' + fm((t.tx + 0.5) * g) + ", " + fm((t.tz + 0.5) * g) + "</td><td>" + pill + '</td><td class="note">' + esc([...t.src].join(", ")) + "</td></tr>";
+  }).join("");
+  const nNew = res.final.filter(t => !t.vanilla && !t.outside).length;
+  $("#tileCount").textContent = res.final.length + (res.final.length === 1 ? " tile" : " tiles") + (res.final.length !== nNew ? " · " + nNew + " new" : "");
+}
+
+function renderChecks() {
+  const rows = [
+    ["Sakhal", 3.75, 333.9, 588.9, [89, 157], "BI wiki table"],
+    ["Livonia", 6.25, 556.7, 981.4, [89, 157], "BI wiki table"],
+    ["Chernarus", 7.5, 671.2, 1180.68, [89, 157], "BI wiki table"],
+    ["Livonia", 6.25, 742.4, 1228.8, [118, 196], "Midpoint of the two Dambog bunker entrance triggers; vanilla Dambog lists { 118, 195–197 }"],
+    ["Nasdara", 4, 5670.22, 13661.87, [1417, 3415], "Irrigation shaft TXS_0003; hole measured at x 5668–5672, z 13660–13664"],
+    ["Nasdara", 4, 9174.47, 11943.6, [2293, 2985], "Bunker basement; hole measured at x 9172–9176, z 11940–11944"],
+    ["Nasdara", 4, 8002, 8002, [2000, 2000], "Test hole added by a mod config; measured at x 8000–8008, z 8000–8004 (two tiles)"]
+  ];
+  $("#chkTable").innerHTML = "<tr><th>Map</th><th>Grid</th><th>World X, Z</th><th>Expected</th><th>Calculated</th><th></th><th>Source</th></tr>" + rows.map(r => {
+    const got = [tileOf(r[2], r[1]), tileOf(r[3], r[1])];
+    const ok = got[0] === r[4][0] && got[1] === r[4][1];
+    return "<tr><td>" + r[0] + '</td><td class="mono">' + r[1] + ' m</td><td class="mono">' + r[2] + ", " + r[3] + '</td><td class="mono">{ ' + r[4].join(", ") + ' }</td><td class="mono">{ ' + got.join(", ") + " }</td><td>" +
+      (ok ? '<span class="pill ok">match</span>' : '<span class="pill fail">differs</span>') + '</td><td class="note">' + r[5] + "</td></tr>";
+  }).join("");
+}
+
+function render() {
+  const res = compute();
+  res.mode = state.mode;
+  last = res;
+  const m = res.m;
+  $("#chipGrid").innerHTML = "grid <b>" + m.grid + " m</b>";
+  $("#chipTiles").textContent = res.max + " × " + res.max + " tiles";
+  $("#chipWorld").textContent = m.world.toLocaleString("en-GB") + " m";
+  $("#formula").textContent = "tile = { ⌊ X ÷ " + m.grid + " ⌋, ⌊ Z ÷ " + m.grid + " ⌋ }      covers X ∈ [x·" + m.grid + ", (x+1)·" + m.grid + ")   Z ∈ [z·" + m.grid + ", (z+1)·" + m.grid + ")";
+  $("#mapNote").textContent = m.note;
+  $("#customBox").hidden = !m.custom;
+  $("#radiusRow").hidden = state.mode !== "radius";
+  $("#modeHelp").textContent = state.mode === "point" ? "Each position adds the one tile it stands on. Notes below flag positions that sit close to a tile edge."
+    : state.mode === "radius" ? "Each position adds every tile that the circle around it touches."
+    : "All positions together mark the corners of a box; every tile the box touches is added. Two opposite corners are enough.";
+  const er = $("#errors");
+  er.hidden = !res.errors.length; er.textContent = res.errors.join(" · ");
+  const nA = state.added.length, nR = state.removed.length;
+  $("#clickInfo").textContent = nA || nR ? (nA + " added and " + nR + " removed by clicking") : "";
+  $("#resetClicks").disabled = !(nA || nR);
+  renderTables(res);
+  const cfg = buildConfig(res);
+  $("#cfgOut").textContent = cfg.text;
+  $("#copy").textContent = "Copy config (" + cfg.count + (cfg.count === 1 ? " tile)" : " tiles)");
+  const gw = $("#groupWarn");
+  const clash = (m.groups || []).some(n => n.toLowerCase() === cfg.group.toLowerCase());
+  gw.hidden = !clash;
+  gw.textContent = clash ? "“" + cfg.group + "” is the name of a vanilla " + m.name + " Holes group. Using it would replace those holes; pick a name with your own prefix." : "";
+  $("#tabMod").setAttribute("aria-selected", state.tab !== "holes");
+  $("#tabHoles").setAttribute("aria-selected", state.tab === "holes");
+  draw(); readout();
+}
+
+// Wire up controls
+$("#map").value = state.map;
+$("#pos").value = state.text;
+$("#radius").value = state.radius;
+$("#group").value = state.group;
+$("#patch").value = state.patch;
+$("#skipVan").checked = !!state.skipVan;
+$("#cGrid").value = state.custom.grid; $("#cWorld").value = state.custom.world; $("#cCls").value = state.custom.cls; $("#cParent").value = state.custom.parent; $("#cPatch").value = state.custom.patch;
+document.querySelectorAll('input[name=mode]').forEach(r => { r.checked = r.value === state.mode; r.addEventListener("change", () => { state.mode = r.value; save(); render(); }); });
+let tmr = null;
+$("#pos").addEventListener("input", () => { clearTimeout(tmr); tmr = setTimeout(() => { state.text = $("#pos").value; save(); render(); }, 150); });
+$("#map").addEventListener("change", () => { state.map = $("#map").value; state.added = []; state.removed = []; save(); render(); });
+$("#radius").addEventListener("input", () => { state.radius = +$("#radius").value || 0; save(); render(); });
+$("#group").addEventListener("input", () => { state.group = $("#group").value; save(); render(); });
+$("#patch").addEventListener("input", () => { state.patch = $("#patch").value; save(); render(); });
+$("#skipVan").addEventListener("change", () => { state.skipVan = $("#skipVan").checked; save(); render(); });
+[["#cGrid", "grid", Number], ["#cWorld", "world", Number], ["#cCls", "cls", String], ["#cParent", "parent", String], ["#cPatch", "patch", String]].forEach(([id, f, T]) =>
+  $(id).addEventListener("input", () => { state.custom[f] = T($(id).value); save(); render(); }));
+$("#zoomIn").addEventListener("click", () => { state.margin = Math.max(0, state.margin - (state.margin > 8 ? 4 : 2)); save(); draw(); });
+$("#zoomOut").addEventListener("click", () => { state.margin = Math.min(200, state.margin + (state.margin >= 8 ? 4 : 2)); save(); draw(); });
+$("#resetClicks").addEventListener("click", () => { state.added = []; state.removed = []; save(); render(); });
+$("#tabMod").addEventListener("click", () => { state.tab = "mod"; save(); render(); });
+$("#tabHoles").addEventListener("click", () => { state.tab = "holes"; save(); render(); });
+$("#copy").addEventListener("click", () => {
+  const text = $("#cfgOut").textContent, st = $("#copyStatus");
+  const fallback = () => { const r = document.createRange(); r.selectNodeContents($("#cfgOut")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); st.textContent = "Selected. Press Ctrl+C to copy."; };
+  try { navigator.clipboard.writeText(text).then(() => { st.textContent = "Copied."; }, fallback); } catch (e) { fallback(); }
+  setTimeout(() => { st.textContent = ""; }, 4000);
+});
+const cv = $("#grid");
+cv.addEventListener("mousemove", ev => { const t = tileAt(ev); const same = (t && hover && t.tx === hover.tx && t.tz === hover.tz) || (!t && !hover); if (!same) { hover = t; draw(); readout(); } });
+cv.addEventListener("mouseleave", () => { hover = null; draw(); readout(); });
+cv.addEventListener("click", ev => { const t = tileAt(ev); if (t) { hover = t; toggle(t); } });
+new ResizeObserver(() => draw()).observe($("#gridwrap"));
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw()); } catch (e) {}
+new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => draw());
+renderChecks();
+render();
+</script>
+</body>
+</html>
