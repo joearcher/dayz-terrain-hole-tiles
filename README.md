@@ -32,7 +32,8 @@ It's counted from the south-west corner of the map, X first, then Z (north). Til
 
 The page:
 
-- reads positions as DayZ prints them (`X, Y, Z`), as `X Z` pairs, or as tiles typed directly. You can paste an existing `tiles[]` block back in;
+- converts a single position straight away: type the X and Z from the game, or paste a whole `X, Y, Z` position, and it shows the tile, its bounds and nearby edges. From there you can copy it as `{ x, z }`, add it to your list or show it on the grid;
+- reads lists of positions as DayZ prints them (`X, Y, Z`), as `X Z` pairs, or as tiles typed directly. You can paste an existing `tiles[]` block back in;
 - adds the tile under each position, every tile within a radius, or every tile in the box between the positions;
 - shows the tiles on a north-up grid with the map's vanilla holes and the edge of the terrain;
 - lets you paint tiles in or erase them by clicking or dragging. Scroll to zoom; pan with Move view, Shift-drag or right-drag; Fit, Undo (Ctrl+Z) and Reset edits. The keyboard works too: arrow keys, Space, + / − and F;
