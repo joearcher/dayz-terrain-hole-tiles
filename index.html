@@ -13,7 +13,7 @@
 [hidden] { display: none !important; }
 a { color: var(--point); }
 body { margin: 0; }
-/* Layout: survey workbench. Positions column beside a north-up tile grid; tile tables, config and checks run full width below. */
+/* Layout: survey workbench. Quick converter on top; positions column beside a north-up tile grid; config runs full width below. */
 :root {
   --paper: #e8ecef;
   --panel: #f8fafb;
@@ -236,14 +236,6 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
     </section>
   </div>
 
-  <section class="panel" aria-labelledby="hTiles">
-    <h2 id="hTiles">Tiles <span class="count" id="tileCount"></span></h2>
-    <h3>Positions</h3>
-    <div class="tablewrap"><table id="ptTable"></table></div>
-    <h3>Tiles for the config</h3>
-    <div class="tablewrap"><table id="tileTable"></table></div>
-  </section>
-
   <section class="panel" aria-labelledby="hCfg">
     <h2 id="hCfg">Config</h2>
     <div class="names">
@@ -259,12 +251,6 @@ pre.config { font: 13px/1.55 var(--f-mono); background: var(--paper); border: 1p
     </div>
     <pre class="config" id="cfgOut"></pre>
     <div class="row"><button class="btn primary" id="copy" type="button">Copy config</button><button class="btn" id="download" type="button">Download</button><span class="status" id="copyStatus" role="status"></span></div>
-  </section>
-
-  <section class="panel" aria-labelledby="hChk">
-    <h2 id="hChk">Checks</h2>
-    <p class="help">Each row runs the same conversion as above against a known answer: the BI wiki's table, and hole edges measured with <code>SurfaceIsHole</code> on a 1.30 Nasdara server.</p>
-    <div class="tablewrap"><table id="chkTable"></table></div>
   </section>
 
   <div class="foot">
@@ -621,50 +607,6 @@ function buildConfig(res) {
   return { text: state.tab === "holes" ? holes : mod, file: state.tab === "holes" ? "holes.cfg" : "config.cpp", count: tiles.length, group };
 }
 
-const ROW_LIMIT = 400;
-function renderTables(res) {
-  const g = res.g;
-  const pt = $("#ptTable");
-  if (!res.points.length) pt.innerHTML = '<tr><td class="note">No positions yet. Paste some into the box above, or paint tiles on the grid.</td></tr>';
-  else pt.innerHTML = "<tr><th>Position</th><th>X</th><th>Z</th><th>Tile</th><th>Inside tile</th><th>Notes</th></tr>" + res.points.slice(0, ROW_LIMIT).map(p => {
-    const notes = [];
-    p.near.forEach(n => notes.push(fmt(n[1]) + " m from the " + n[0] + " edge; the opening may also need { " + n[2] + ", " + n[3] + " }"));
-    if (res.m.holes && res.m.holes.has(key(p.tx, p.tz))) notes.push("this tile is already a vanilla hole");
-    if (p.tx < 0 || p.tz < 0 || p.tx >= res.max || p.tz >= res.max) notes.push("outside the terrain");
-    return "<tr><td>" + esc(p.name) + '</td><td class="mono">' + fm(p.x) + '</td><td class="mono">' + fm(p.z) + '</td><td class="mono">{ ' + p.tx + ", " + p.tz + ' }</td><td class="mono">' + fmt(p.ox) + ", " + fmt(p.oz) + ' m</td><td class="note">' + esc(notes.join("; ")) + "</td></tr>";
-  }).join("") + (res.points.length > ROW_LIMIT ? '<tr><td class="note" colspan="6">Showing the first ' + ROW_LIMIT + " of " + res.points.length + " positions.</td></tr>" : "");
-  const tt = $("#tileTable");
-  if (!res.final.length) tt.innerHTML = '<tr><td class="note">No tiles in your list.</td></tr>';
-  else tt.innerHTML = "<tr><th>Tile</th><th>X range (m)</th><th>Z range (m)</th><th>Centre</th><th>Status</th><th>From</th></tr>" + res.final.slice(0, ROW_LIMIT).map(t => {
-    let pill = '<span class="pill new">new hole</span>';
-    if (t.outside) pill = '<span class="pill out">outside terrain</span>';
-    else if (t.vanilla) pill = '<span class="pill van">vanilla hole</span>';
-    else if (t.vanilla === null) pill = '<span class="pill new">new (vanilla unknown)</span>';
-    return '<tr><td class="mono">{ ' + t.tx + ", " + t.tz + ' }</td><td class="mono">' + fm(t.tx * g) + " – " + fm((t.tx + 1) * g) + '</td><td class="mono">' + fm(t.tz * g) + " – " + fm((t.tz + 1) * g) +
-      '</td><td class="mono">' + fm((t.tx + 0.5) * g) + ", " + fm((t.tz + 0.5) * g) + "</td><td>" + pill + '</td><td class="note">' + esc([...t.src].join(", ")) + "</td></tr>";
-  }).join("") + (res.final.length > ROW_LIMIT ? '<tr><td class="note" colspan="6">Showing the first ' + ROW_LIMIT + " of " + res.final.length + " tiles. The config has them all.</td></tr>" : "");
-  const nNew = res.final.filter(t => !t.vanilla && !t.outside).length;
-  $("#tileCount").textContent = res.final.length + (res.final.length === 1 ? " tile" : " tiles") + (res.final.length !== nNew ? " · " + nNew + " new" : "");
-}
-
-function renderChecks() {
-  const rows = [
-    ["Sakhal", 3.75, 333.9, 588.9, [89, 157], "BI wiki table"],
-    ["Livonia", 6.25, 556.7, 981.4, [89, 157], "BI wiki table"],
-    ["Chernarus", 7.5, 671.2, 1180.68, [89, 157], "BI wiki table"],
-    ["Livonia", 6.25, 742.4, 1228.8, [118, 196], "Midpoint of the two Dambog bunker entrance triggers; vanilla Dambog lists { 118, 195–197 }"],
-    ["Nasdara", 4, 5670.22, 13661.87, [1417, 3415], "Irrigation shaft TXS_0003; hole measured at x 5668–5672, z 13660–13664"],
-    ["Nasdara", 4, 9174.47, 11943.6, [2293, 2985], "Bunker basement; hole measured at x 9172–9176, z 11940–11944"],
-    ["Nasdara", 4, 8002, 8002, [2000, 2000], "Test hole added by a mod config; measured at x 8000–8008, z 8000–8004 (two tiles)"]
-  ];
-  $("#chkTable").innerHTML = "<tr><th>Map</th><th>Grid</th><th>World X, Z</th><th>Expected</th><th>Calculated</th><th></th><th>Source</th></tr>" + rows.map(r => {
-    const got = [tileOf(r[2], r[1]), tileOf(r[3], r[1])];
-    const ok = got[0] === r[4][0] && got[1] === r[4][1];
-    return "<tr><td>" + r[0] + '</td><td class="mono">' + r[1] + ' m</td><td class="mono">' + r[2] + ", " + r[3] + '</td><td class="mono">{ ' + r[4].join(", ") + ' }</td><td class="mono">{ ' + got.join(", ") + " }</td><td>" +
-      (ok ? '<span class="pill ok">match</span>' : '<span class="pill fail">differs</span>') + '</td><td class="note">' + r[5] + "</td></tr>";
-  }).join("");
-}
-
 // ---- Quick convert ----
 // One number per box; "5670,22" (no space) is read as a decimal comma.
 function readNum(s) {
@@ -724,7 +666,7 @@ function render() {
   $("#mapNote").textContent = m.note;
   $("#customBox").hidden = !m.custom;
   $("#radiusRow").hidden = state.mode !== "radius";
-  $("#modeHelp").textContent = state.mode === "point" ? "Each position adds the one tile it stands on. Notes below flag positions that sit close to a tile edge."
+  $("#modeHelp").textContent = state.mode === "point" ? "Each position adds the one tile it stands on. To check one position against the tile edges, use Convert a position above."
     : state.mode === "radius" ? "Each position adds every tile that the circle around it touches."
     : "All positions together mark the corners of a box; every tile the box touches is added. Two opposite corners are enough.";
   const er = $("#errors");
@@ -733,7 +675,6 @@ function render() {
   $("#editInfo").textContent = nA || nR ? "Painted on " + m.name + ": " + nA + " added, " + nR + " removed." : "";
   $("#resetEdits").disabled = !(nA || nR);
   $("#undo").disabled = !(undoStacks[state.map] && undoStacks[state.map].length);
-  renderTables(res);
   const cfg = buildConfig(res);
   cfgText = cfg.text;
   $("#cfgOut").textContent = cfg.text;
@@ -894,7 +835,6 @@ new ResizeObserver(() => draw()).observe($("#gridwrap"));
 try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw()); } catch (e) {}
 new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => draw());
-renderChecks();
 render();
 </script>
 </body>

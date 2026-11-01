@@ -38,7 +38,7 @@ The page:
 - shows the tiles on a north-up grid with the map's vanilla holes and the edge of the terrain;
 - lets you paint tiles in or erase them by clicking or dragging. Scroll to zoom; pan with Move view, Shift-drag or right-drag; Fit, Undo (Ctrl+Z) and Reset edits. The keyboard works too: arrow keys, Space, + / − and F;
 - keeps separate positions and edits for each map, with an example to start from;
-- flags positions close to a tile edge, tiles that are already vanilla holes, tiles outside the terrain, and group names that would replace a vanilla group;
+- warns when a group name would replace a vanilla group;
 - writes either the `Holes` block alone or a complete mod `config.cpp`, to copy or download.
 
 ## Grid sizes
